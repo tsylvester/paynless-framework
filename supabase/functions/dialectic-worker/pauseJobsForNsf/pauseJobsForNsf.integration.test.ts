@@ -1,15 +1,15 @@
 // supabase/functions/dialectic-worker/pauseJobsForNsf.integration.test.ts
 
-import { pauseJobsForNsf } from './pauseJobsForNsf.ts';
-import type { PauseJobsForNsfDeps, PauseJobsForNsfParams } from '../dialectic-service/dialectic.interface.ts';
-import type { ContributionGenerationPausedNsfPayload } from '../_shared/types/notification.service.types.ts';
+import { pauseJobsForNsf } from '../pauseJobsForNsf/pauseJobsForNsf.ts';
+import type { PauseJobsForNsfDeps, PauseJobsForNsfParams } from '../../dialectic-service/dialectic.interface.ts';
+import type { ContributionGenerationPausedNsfPayload } from '../../_shared/types/notification.service.types.ts';
 import { assert, assertEquals, assertExists, assertObjectMatch } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { MockLogger } from '../_shared/logger.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
-import type { Database } from '../types_db.ts';
-import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { isRecord } from '../_shared/utils/type_guards.ts';
+import { MockLogger } from '../../_shared/logger.mock.ts';
+import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../../_shared/supabase.mock.ts';
+import type { Database } from '../../types_db.ts';
+import { mockNotificationService, resetMockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
+import { isRecord } from '../../_shared/utils/type_guards.ts';
 
 type UpdateJobRecord = Database['public']['Tables']['dialectic_generation_jobs']['Update'];
 

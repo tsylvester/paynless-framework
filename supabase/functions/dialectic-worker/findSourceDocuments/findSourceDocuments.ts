@@ -1,11 +1,11 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { Database } from '../types_db.ts';
-import { DialecticJobRow, DialecticPlanJobPayload, DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
-import { DialecticContributionRow, DialecticProjectResourceRow, DialecticFeedbackRow } from '../dialectic-service/dialectic.interface.ts';
-import { SourceDocument } from '../dialectic-service/dialectic.interface.ts';
-import { isDocumentRelationships, isFileType } from '../_shared/utils/type_guards.ts';
-import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-import { isRecord } from '../_shared/utils/type_guards.ts';
+import { Database } from '../../types_db.ts';
+import { DialecticJobRow, DialecticPlanJobPayload, DialecticRecipeStep } from '../../dialectic-service/dialectic.interface.ts';
+import { DialecticContributionRow, DialecticProjectResourceRow, DialecticFeedbackRow } from '../../dialectic-service/dialectic.interface.ts';
+import { SourceDocument } from '../../dialectic-service/dialectic.interface.ts';
+import { isDocumentRelationships, isFileType } from '../../_shared/utils/type_guards.ts';
+import { deconstructStoragePath } from '../../_shared/utils/path_deconstructor.ts';
+import { isRecord } from '../../_shared/utils/type_guards.ts';
 
 
 // Type guards to differentiate between the different source table row types.

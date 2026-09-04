@@ -1461,357 +1461,935 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   Each payload guard rejects a row carrying another arm's payload, and no arm's member checks are inlined at a delegation site — guard test, cross-arm rejection cases.
       * `[✅]`   The full graph assembles and runs end to end with only Supabase and the queue mocked — integration test.
 
-* `[ ]`   supabase/functions/dialectic-worker/processSimpleJob.ts **[BE] Take the canonical `(deps, params, payload)` shape and report a two-arm outcome: read the owner off the job row, supply `stageSlug` and `output_type` to `gatherArtifacts`, build the dispatcher's one-member params and five-member payload, narrow the deferral, and surrender every retry decision, `failed` write and `retry_loop_failed` write to the runner**
+
+*   `[ ]` supabase/functions/dialectic-worker/processSimpleJob/processSimpleJob.ts **[BE] Canonize the EXECUTE processor as a module owning its whole contract: guard the untrusted payload on entry, return every failure as a typed error on the error arm, propagate the dispatcher's error unchanged, read the step markers from `planner_metadata`, and surrender every retry decision and row write to the runner**
+
+    *   `[ ]` `objective`
+        *   `[ ]` Solve a processor whose payload slot is `unknown` and whose body reads it as though it were narrowed, so the file does not compile. It destructures `job` off the parameter before any guard runs, re-guards the job row's payload after that, and carries the narrowing on an inner guard whose negated branch cannot execute.
+        *   `[ ]` Solve a processor that reports by throwing and then reconstructs what it threw. It wraps the dispatcher's typed error in a second error type, throws it, catches it, unwraps it, and matches the message text against fourteen substrings to recover a classification the callee already carried.
+        *   `[ ]` Solve a processor that decides its own job is dead: it writes `status: 'failed'`, compares `attempt_count` against `max_retries`, calls `ctx.retryJob`, and writes `status: 'retry_loop_failed'`, so the runner that claimed the row learns nothing.
+        *   `[ ]` Solve a recipe-step resolution that reads its slug marker from the payload root, where the payload's own guard forbids it, while reading its two sibling markers from `planner_metadata`, where the type admits them.
+        *   `[ ]` Solve a body that carries eleven values in variables annotated with unions composed at the annotation site, and supplies defaults with a ternary and with `??`.
+        *   `[ ]` Solve a processor that owns no contract: its eight types sit in a service-layer interface, its six guards in a shared guard file, its twenty-one mock symbols in a shared mock file, and its contract proofs in another module's interface test — so no consumer can build or test against it from one import point, and every one of those files is edited whenever this processor changes.
+        *   `[ ]` Functional goals:
+            *   `[ ]` The module lives at `dialectic-worker/processSimpleJob/` and owns its interface, interface test, mock, guard, guard test, provides, unit suite, integration suite and implementation. Consumers reach every symbol through `processSimpleJob.provides.ts`.
+            *   `[ ]` `ProcessSimpleJobFn` declares `payload: unknown`. The payload type is the guard's narrowing target, not the parameter annotation.
+            *   `[ ]` `processSimpleJob` is declared `export const processSimpleJob: ProcessSimpleJobFn = async (ctx, params, payload) => { … }`, parameter types inferred from that annotation, returning `Promise<ProcessSimpleJobReturn>`.
+            *   `[ ]` `isProcessSimpleJobPayload(payload)` is the first statement of the outermost `try`. Its `false` return produces the error arm directly; its delegated throw reaches the outermost `catch`, which produces the error arm. Neither path notifies and neither writes a row.
+            *   `[ ]` The narrowed `payload.job` is bound inside that outer `try`, and the body runs in a second `try` nested in the narrowed scope, so the body's `catch` reads the job row while the guard's throw is handled above it.
+            *   `[ ]` `params.dbClient` replaces the `dbClient` parameter, `payload.job` replaces the `job` parameter, `payload.job.user_id` replaces every read of `projectOwnerUserId`.
+            *   `[ ]` The recipe-step slug marker is read from `payload.job.payload.planner_metadata`, beside `recipe_step_id` and `recipe_template_id`, and the read of `step_slug` from the payload root is deleted.
+            *   `[ ]` The `ctx.gatherArtifacts` params literal carries `stageSlug` from the narrowed payload and `output_type` from the resolved recipe step, beside the four members it passes today.
+            *   `[ ]` The `PrepareModelJobParams` literal carries `dbClient` and nothing else. The `PrepareModelJobPayload` literal carries `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance` and `inputsRequired`, and the `getSortedCompressionCandidates` import is deleted with the `compressionStrategy` member it supplied.
+            *   `[ ]` The dispatcher's error arm is returned as `{ error: prepareResult.error, retriable: prepareResult.retriable }`. `PrepareModelJobExecutionError`, its construction, its unwrapping and its import are deleted.
+            *   `[ ]` A `ContextWindowError` on the dispatcher's error arm sends the three failure notifications it sends today and returns `{ error, retriable: false }`.
+            *   `[ ]` A deferral is narrowed with `isPrepareModelJobPendingReturn` and returns `{ deferred: true }` with no notification and no row write. A dispatch is narrowed with `isPrepareModelJobQueuedReturn`, sends `execute_completed`, and returns `{ dispatched: true }`.
+            *   `[ ]` Each failure this function owns returns a `ProcessSimpleJobError` carrying that failure's `ProcessSimpleJobErrorCode` and its message, after sending that failure's notifications, with `retriable: false`. No owned failure throws.
+            *   `[ ]` The nested `catch` returns `{ error, retriable: true }` for an unexpected throw and sends no notification.
+            *   `[ ]` No path writes `status: 'failed'`, `status: 'retry_loop_failed'`, a `completed_at`, or an `error_details` failure message; no path calls `ctx.retryJob` or compares `attempt_count` against `max_retries`.
+        *   `[ ]` Non-functional constraints:
+            *   `[ ]` Every failure notification keeps its recipient, its condition and its payload: `sendContributionGenerationFailedEvent`, `sendContributionFailedNotification` and the `job_failed` `sendJobNotificationEvent`, each fired where it fires today, its code now read from the returned error rather than matched from a message.
+            *   `[ ]` The three notifications that accompanied the `retry_loop_failed` write leave this module with that write and are not replaced. The terminal statement is `handleJob`'s, in the worker root's node.
+            *   `[ ]` The opening `Starting attempt N/M` log line moves inside the narrowed scope, keeps reading `attempt_count` and `max_retries` off the row, and decides nothing.
+            *   `[ ]` `sessionData` keeps every use it has — the assembler options, the iteration number it supplies to `gatherArtifacts` and to every notification. What ends is passing it onward.
+            *   `[ ]` The stage and recipe resolution, the provider read, the overlay-row read, the initial-prompt resolution, the continuation routing, the `promptConstructionPayload` construction, the `execute_started` and `dialectic_contribution_started` events, and every log line keep their behavior.
+            *   `[ ]` `FailedAttemptError` and `ModelProcessingResult` constructions and imports leave with the retry branch.
+            *   `[ ]` Every moved symbol keeps its production name. This node relocates and corrects; it renames nothing.
+        *   `[ ]` Each goal is proven by a named case in this module's interface, guard, unit or integration suite.
+
+    *   `[ ]` `role`
+        *   `[ ]` App-layer orchestration of one EXECUTE job: prove the payload, resolve the stage and its recipe step, assemble the prompt, gather the artifacts, hand the result to the dispatcher, and report what happened as a return value.
+        *   `[ ]` Dispatch and deferral are this function's own outcomes; it is the only party that knows whether a model call was enqueued or the job is waiting on compression children. Whether a failed job is retried is a queue policy applied to a row, and the runner holds the row.
+        *   `[ ]` Out-of-scope responsibilities:
+            *   `[ ]` Do not write `status: 'failed'`, `'retrying'` or `'retry_loop_failed'`, a `completed_at`, or an `error_details` failure message.
+            *   `[ ]` Do not read `max_retries` or `attempt_count` for a decision, and do not call `ctx.retryJob`.
+            *   `[ ]` Do not decide affordability, compress anything, or read a compression artifact.
+            *   `[ ]` Do not set `waiting_for_children` on the deferral path.
+            *   `[ ]` Do not declare `IJobProcessors`; it belongs to the `processJob` module and imports this module's `ProcessSimpleJobFn` from its provides.
+            *   `[ ]` Do not declare `IJobContext`; it belongs to `createJobContext` and is imported from there as this function's deps slot.
+            *   `[ ]` Do not write the step markers this function reads. The skeleton builder in `processComplexJob.ts` mints them and the planner carries them forward, in that module's node.
+            *   `[ ]` Do not edit `gatherArtifacts`, `applyCompressionOverlay`, `prepareModelJob`, `processJob` or `dialectic-worker/index.ts`.
+            *   `[ ]` Do not decompose the implementation body or extract from it.
+
+    *   `[ ]` `module`
+        *   `[ ]` Bounded context is `dialectic-worker/processSimpleJob/` — one EXECUTE job's pass from payload proof through assembly and gathering to dispatch, the outcome it reports, the contract that outcome satisfies, and the types its failures carry.
+        *   `[ ]` Inside boundary: this processor's function type, its params, its payload, its return arms and flavors, its owned error taxonomy, its step markers, and every guard and mock for them.
+        *   `[ ]` Outside boundary: whether a retriable failure is retried and what a job's terminal state is, both the runner's; caps, wallet, affordability, compression and the queue, all `prepareModelJob`'s; `IJobContext`, `createJobContext`'s; `IJobProcessors`, `processJob`'s.
+
+    *   `[ ]` `deps`
+        *   `[ ]` Removed provider: `_shared/utils/vector_utils.ts` (`getSortedCompressionCandidates`). Shared utility, inbound, closed by this node — this file imported the concrete scorer solely to relay it.
+        *   `[ ]` Removed provider: `createJobContext/JobContext.interface.ts` (`RetryJobFn`), and every read of `ctx.retryJob`. App-layer context contract, inbound, closed by this node.
+        *   `[ ]` Provider: `../createJobContext/JobContext.interface.ts` (`IJobContext`). Worker-layer context contract, inbound, this function's deps slot. `createJobContext` imports nothing from this module, so the edge is one-way and no cycle is opened.
+        *   `[ ]` Provider: `../prepareModelJob/prepareModelJob.provides.ts` — `isPrepareModelJobErrorReturn`, `isPrepareModelJobPendingReturn`, `isPrepareModelJobQueuedReturn`, `PrepareModelJobParams`, `PrepareModelJobPayload`. Sibling app-layer module, inbound. `PrepareModelJobExecutionError` is not among them.
+        *   `[ ]` Provider: `dialectic-service/dialectic.interface.ts` — `DialecticJobRow`, `DialecticExecuteJobPayload`, `DialecticRecipeStep`, `DialecticSessionRow`, `PromptConstructionPayload`. Service-layer types this module's contract composes; that file imports nothing from this module after this node.
+        *   `[ ]` Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` — `isDialecticJobRow`, `isDialecticExecuteJobPayload`, `isRecord`, which this module's own payload guard calls. Shared guard package, inbound.
+        *   `[ ]` Confirm:
+            *   `[ ]` The deps slot is `IJobContext`, unnarrowed, as this function receives it today.
+            *   `[ ]` `ctx.gatherArtifacts` carries the two added params as of its own node; `ctx.prepareModelJob` carries the narrowed params, the widened payload and the two-flavor success arm as of its own node. This node supplies and narrows; it changes neither contract.
+            *   `[ ]` No reverse dependency: `prepareModelJob`, `gatherArtifacts`, `retryJob`, `vector_utils`, `createJobContext` and `dialectic-service/dialectic.interface.ts` import nothing from this module.
+        *   `[ ]` `context_slice`
+            *   `[ ]` From `ctx`: `logger`, `notificationService`, `promptAssembler`, `downloadFromStorage`, `gatherArtifacts`, `prepareModelJob`.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.interface.test.ts`
+        *   `[ ]` Prove `ProcessSimpleJobParams` and `ProcessSimpleJobPayload` by their required-key surface records, each annotated with the exported symbol.
+        *   `[ ]` Prove `ProcessSimpleJobDispatchedReturn` and `ProcessSimpleJobDeferredReturn` as flavors of `ProcessSimpleJobSuccessReturn`, and `ProcessSimpleJobSuccessReturn` and `ProcessSimpleJobErrorReturn` as arms of `ProcessSimpleJobReturn`, by typed assignment.
+        *   `[ ]` Prove `ProcessSimpleJobFn`'s declared return in the async form: `ReturnType<ProcessSimpleJobFn>` admits `Promise<ProcessSimpleJobReturn>`.
+        *   `[ ]` Prove `ProcessSimpleJobErrorCode` by a typed literal assigned to the alias, one block covering its admitted values.
+        *   `[ ]` Prove `ProcessSimpleJobErrorConstructorParams` and `ProcessSimpleJobStepMarkers` by their required-key surface records.
+        *   `[ ]` Prove `ProcessSimpleJobStepMarkersOrAbsent` and `DialecticRecipeStepOrAbsent` by membership: the base type is assignable to each, and `null` is assignable to each.
+        *   `[ ]` No block proves a payload contract through `Parameters<ProcessSimpleJobFn>[2]`; that slot is `unknown` and admits everything.
+        *   `[ ]` Report the enumeration: every symbol `processSimpleJob.interface.ts` exports, and the block proving each, in both directions.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.interface.ts`
+        *   `[ ]` Declare `ProcessSimpleJobParams` with `dbClient`, `ProcessSimpleJobPayload` with `job`, and the five return types — `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobErrorReturn`, `ProcessSimpleJobReturn` — in the shapes they carry today.
+        *   `[ ]` Declare `ProcessSimpleJobFn` as `(deps: IJobContext, params: ProcessSimpleJobParams, payload: unknown) => Promise<ProcessSimpleJobReturn>`.
+        *   `[ ]` Declare `ProcessSimpleJobErrorCode` as a string-literal union whose members are the codes this function's owned failures carry: `AUTH_MISSING`, `INVALID_INITIAL_PROMPT`, `STAGE_CONFIG_MISSING_OVERLAYS`, `STAGE_CONFIG_MISSING`, `SESSION_NOT_FOUND`, `PROJECT_NOT_FOUND`, `DOMAIN_NOT_FOUND`, `RECIPE_STEP_RESOLUTION_FAILED`, `CONTINUATION_CONTENT_MISSING`, `INTERNAL_DEPENDENCY_MISSING`, `PROVIDER_CONFIG_INVALID`, `DISPATCHER_RESULT_INVALID`.
+        *   `[ ]` Declare `ProcessSimpleJobErrorConstructorParams` with `code: ProcessSimpleJobErrorCode` and `message: string`, and `ProcessSimpleJobError` extending `Error`, taking one such object and exposing `code`.
+        *   `[ ]` Declare `ProcessSimpleJobStepMarkers` with `documentKey: FileType` and `stepKey: string`, `ProcessSimpleJobStepMarkersOrAbsent` as that type or `null`, and `DialecticRecipeStepOrAbsent` as `DialecticRecipeStep` or `null`.
+        *   `[ ]` The codes for failures owned by the dispatcher's chain — insufficient funds, wallet missing, wallet balance invalid, save failed, continuation root missing — are not members of `ProcessSimpleJobErrorCode`. Those failures arrive on `prepareModelJob`'s error arm and are propagated.
+
+    *   `[ ]` `processSimpleJob.interaction.spec`
+        *   `[ ]` Branch: the payload is not a `ProcessSimpleJobPayload`.
+            *   `[ ]` Condition: the entry guard returns `false`.
+            *   `[ ]` Decision: `isProcessSimpleJobPayload(payload)`.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error, retriable: false }` carrying an error naming the rejected shape. No notification, no row write.
+        *   `[ ]` Branch: the job row's payload fails a member check.
+            *   `[ ]` Condition: the entry guard's delegation to `isDialecticExecuteJobPayload` throws its per-member diagnostic.
+            *   `[ ]` Decision: the outermost `catch`.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error: <the guard's diagnostic>, retriable: false }`. No notification, no row write.
+        *   `[ ]` Branch: a resolution step fails — session, provider, project, domain, stage, system prompt, overlays, recipe step, initial prompt, or continuation content.
+            *   `[ ]` Condition: that step's existing check fails.
+            *   `[ ]` Decision: the existing comparison for that check.
+            *   `[ ]` Dependency call: the reads already made on that path, then that failure's three notifications with its code.
+            *   `[ ]` Outcome: `{ error: new ProcessSimpleJobError({ code, message }), retriable: false }`, returned at the site. No row write.
+        *   `[ ]` Branch: gathering fails.
+            *   `[ ]` Condition: `ctx.gatherArtifacts` returns its error arm.
+            *   `[ ]` Decision: `isGatherArtifactsErrorReturn(gatherResult)`.
+            *   `[ ]` Dependency call: `ctx.gatherArtifacts({ dbClient, projectId, sessionId, iterationNumber, stageSlug, output_type }, { inputsRequired })`.
+            *   `[ ]` Outcome: `{ error: gatherResult.error, retriable: gatherResult.retriable }`, propagated unchanged.
+        *   `[ ]` Branch: the dispatcher returns its error arm and the error is a `ContextWindowError`.
+            *   `[ ]` Condition: `isPrepareModelJobErrorReturn(prepareResult)` and `prepareResult.error instanceof ContextWindowError`.
+            *   `[ ]` Decision: those two checks, in that order.
+            *   `[ ]` Dependency call: `ctx.logger.error`, then the `other_generation_failed` event, the `contribution_generation_failed` notification and, when the step markers are not `null`, the `job_failed` event, each with its existing `CONTEXT_WINDOW_ERROR` code and message.
+            *   `[ ]` Outcome: `{ error: prepareResult.error, retriable: false }`. No row write.
+        *   `[ ]` Branch: the dispatcher returns its error arm and the error is anything else.
+            *   `[ ]` Condition: `isPrepareModelJobErrorReturn(prepareResult)`.
+            *   `[ ]` Decision: that guard, with the `ContextWindowError` check false.
+            *   `[ ]` Dependency call: that failure's three notifications, its code read from the propagated error where it carries one and `INTERNAL_DEPENDENCY_MISSING` where it does not.
+            *   `[ ]` Outcome: `{ error: prepareResult.error, retriable: prepareResult.retriable }`, propagated unchanged and never re-wrapped.
+        *   `[ ]` Branch: the dispatcher deferred.
+            *   `[ ]` Condition: `isPrepareModelJobPendingReturn(prepareResult)`.
+            *   `[ ]` Decision: that guard.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ deferred: true }`.
+        *   `[ ]` Branch: the dispatcher queued the call.
+            *   `[ ]` Condition: `isPrepareModelJobQueuedReturn(prepareResult)`.
+            *   `[ ]` Decision: that guard.
+            *   `[ ]` Dependency call: `ctx.notificationService.sendJobNotificationEvent` with `type: 'execute_completed'` and the members it sends today, when `payload.job.user_id` is present.
+            *   `[ ]` Outcome: `{ dispatched: true }`.
+        *   `[ ]` Branch: the dispatcher returned neither arm.
+            *   `[ ]` Condition: no return guard matches.
+            *   `[ ]` Decision: all three arm guards false.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error: new ProcessSimpleJobError({ code: 'DISPATCHER_RESULT_INVALID' … }), retriable: false }`.
+        *   `[ ]` Branch: an unexpected throw reaches the nested `catch`.
+            *   `[ ]` Condition: a collaborator throws where no owned check covers it.
+            *   `[ ]` Decision: none.
+            *   `[ ]` Dependency call: `ctx.logger.warn` with the attempt and the model.
+            *   `[ ]` Outcome: `{ error, retriable: true }`. No notification.
+        *   `[ ]` Ordering and side effects: exactly one gather call and one dispatcher call per invocation; no `dialectic_generation_jobs` write on any path; at most one set of failure notifications, and none on the unexpected-throw path, the deferral, or either guard-failure path; every outcome leaves the function by returning a member of the union.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.mock.ts`
+        *   `[ ]` The four symbols for each owned object type: `ProcessSimpleJobParams`, `ProcessSimpleJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobErrorReturn`, `ProcessSimpleJobErrorConstructorParams` and `ProcessSimpleJobStepMarkers`.
+        *   `[ ]` `mockProcessSimpleJob: ProcessSimpleJobFn`, returning `buildProcessSimpleJobDispatchedReturn()`, identical signature, no options bag, no recording.
+        *   `[ ]` `buildProcessSimpleJobError`, returning a real `new ProcessSimpleJobError(buildProcessSimpleJobErrorConstructorParams(overrides))`. There is no `invalidateProcessSimpleJobError` and no `mockProcessSimpleJobError`.
+        *   `[ ]` `ProcessSimpleJobSuccessReturn` and `ProcessSimpleJobReturn` take no builder of their own; each member has one. `ProcessSimpleJobErrorCode`, `ProcessSimpleJobStepMarkersOrAbsent` and `DialecticRecipeStepOrAbsent` take no mock.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.guard.test.ts`
+        *   `[ ]` Prove `isProcessSimpleJobParams`, `isProcessSimpleJobPayload`, `isProcessSimpleJobDispatchedReturn`, `isProcessSimpleJobDeferredReturn`, `isProcessSimpleJobSuccessReturn`, `isProcessSimpleJobErrorReturn`, `isProcessSimpleJobErrorCode`, `isProcessSimpleJobError` and `isProcessSimpleJobStepMarkers` against the case checklist, fixtures drawn from this module's builders and invalidators.
+        *   `[ ]` A case proves `isProcessSimpleJobPayload` rejects a row carrying a plan payload, surfacing the arm guard's own reason.
+        *   `[ ]` Each return-flavor guard accepts its own flavor and rejects every other.
+        *   `[ ]` `isProcessSimpleJobError` accepts a real instance and rejects an object literal carrying the same members.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.guard.ts`
+        *   `[ ]` Implement the six guards this module now owns in the bodies they carry today, calling `isDialecticJobRow` and `isDialecticExecuteJobPayload` from the shared guard package for the imported types they delegate to.
+        *   `[ ]` Implement `isProcessSimpleJobErrorCode` over the alias's admitted values, `isProcessSimpleJobError` by `instanceof`, and `isProcessSimpleJobStepMarkers` as a data guard checking both members.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.test.ts`
+        *   `[ ]` The suite moves from `dialectic-worker/processSimpleJob.test.ts`, its implementation import becoming the sibling path and its fixtures becoming this module's builders. No case is deleted except where named below.
+        *   `[ ]` Every case calls `processSimpleJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
+        *   `[ ]` New case: a payload that is not a `ProcessSimpleJobPayload` returns the error arm with `retriable: false`, sends no notification and writes `dialectic_generation_jobs` zero times.
+        *   `[ ]` New case: a job row whose payload fails a member check returns the error arm carrying the guard's own diagnostic, with `retriable: false`.
+        *   `[ ]` Each case that asserts a thrown error asserts the returned error arm instead, its `error` an instance of `ProcessSimpleJobError` carrying that failure's code, its `retriable` `false`, and no `dialectic_generation_jobs` update issued.
+        *   `[ ]` New case: the dispatcher's error arm is returned with the identical error instance and the dispatcher's own `retriable` value, arranged with `retriable: true` so the flag cannot be a constant, and asserting the returned error is not an instance of `ProcessSimpleJobError`.
+        *   `[ ]` New case: a `ContextWindowError` on the dispatcher's error arm returns that same instance with `retriable: false` and sends the three `CONTEXT_WINDOW_ERROR` notifications.
+        *   `[ ]` New case: an unexpected throw from `ctx.promptAssembler.assemble` returns the error arm with `retriable: true` and sends no notification, arranged beside a classified case in the same file.
+        *   `[ ]` New case: the recipe step resolves from `planner_metadata` carrying only a slug marker and no `recipe_step_id`.
+        *   `[ ]` New case: a dispatcher returning `{ waiting_for_children: true }` returns `{ deferred: true }`, sends zero notifications and writes zero rows, arranged alongside a queued case in the same file.
+        *   `[ ]` New case: a dispatcher returning `{ queued: true }` returns `{ dispatched: true }` and sends exactly one `execute_completed` event carrying the members it carries today.
+        *   `[ ]` Every case's `PrepareModelJobParams` expectation asserts one member, `dbClient`; every `PrepareModelJobPayload` expectation asserts the five members and that no `compressionStrategy`, `authToken` or `sessionData` is present.
+        *   `[ ]` New case: the `gatherArtifacts` call receives `stageSlug` from the payload and `output_type` from the resolved recipe step, captured at the call site.
+        *   `[ ]` The three cases asserting `ctx.retryJob` is called, and the case asserting the `retry_loop_failed` row update and its three notifications, are deleted with the branch they covered.
+        *   `[ ]` New case: a failure the function reports as retriable calls `ctx.retryJob` zero times and writes zero rows.
+        *   `[ ]` Every remaining case keeps its coverage and its assertions.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.ts`
+        *   `[ ]` The implementation moves from `dialectic-worker/processSimpleJob.ts`, declared as annotated above, with the restated parameter types and the imports they required deleted.
+        *   `[ ]` Open one `try` whose first statement is the entry guard, bind `params.dbClient` and `payload.job` after it, and open a second `try` for the body inside that narrowed scope. The outer `catch` handles only the guard's throw.
+        *   `[ ]` Delete the inner `isDialecticExecuteJobPayload` call and its unreachable negated block.
+        *   `[ ]` Hold the step markers in one value typed `ProcessSimpleJobStepMarkersOrAbsent`, assigned once when the recipe step resolves, and read as a pair by every failure notification. The `?? 'unknown'` default is deleted with the pair that made it unreachable.
+        *   `[ ]` Hold the resolved recipe step in one value typed `DialecticRecipeStepOrAbsent`.
+        *   `[ ]` Read the slug marker from `planner_metadata` beside `recipe_step_id` and `recipe_template_id`; delete the root read and the `isRecord` checks that reached it.
+        *   `[ ]` Bind `providerDetails`, `resolvedProjectInitialUserPrompt` and `sourceContributionId` as `const` at the point each is determined, each branch returning its typed error where the value cannot be determined, so no value is carried in a variable annotated with a union composed at that site.
+        *   `[ ]` Replace `e instanceof Error ? e : new Error(String(e))` with an explicit branch in the nested `catch`.
+        *   `[ ]` Delete the fourteen `lower.includes` comparisons, the `lower.startsWith` comparison, the `prepareJobRetriable` carrier and the `message`/`lower` locals. `emitImmediateFailure` keeps its three notifications, takes a `ProcessSimpleJobErrorCode` and a message, and writes no row.
+        *   `[ ]` Delete the `dialectic_generation_jobs` update in the `ContextWindowError` branch and the one inside `emitImmediateFailure`.
+        *   `[ ]` Delete the `failedAttempt` and `modelProcessingResult` constructions, the `currentAttempt < max_retries` comparison, the `ctx.retryJob` call, the `retry_loop_failed` update with its log line, the three notifications that followed it, and the `FailedAttemptError` and `ModelProcessingResult` imports.
+        *   `[ ]` Take every import from `prepareModelJob.provides.ts`, gaining the two arm guards and losing `isPrepareModelJobSuccessReturn` and `PrepareModelJobExecutionError`.
+        *   `[ ]` The `gatherArtifacts` params literal gains `stageSlug` and `output_type`; the `PrepareModelJobParams` literal drops `authToken`, `job`, `projectOwnerUserId` and `providerRow`; the `PrepareModelJobPayload` literal drops `compressionStrategy` and gains `job` and `providerRow`; the `getSortedCompressionCandidates` import is deleted.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.provides.ts`
+        *   `[ ]` Re-export `processSimpleJob.ts`, `processSimpleJob.interface.ts`, `processSimpleJob.guard.ts` and `processSimpleJob.mock.ts`.
+
+    *   `[ ]` supabase/functions/dialectic-service/`dialectic.interface.ts`
+        *   `[ ]` Delete `ProcessSimpleJobParams`, `ProcessSimpleJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobErrorReturn`, `ProcessSimpleJobReturn` and `ProcessSimpleJobFn`, and the imports they required.
+        *   `[ ]` `IJobProcessors` keeps its `processSimpleJob` member and takes `ProcessSimpleJobFn` from this module's provides until the `processJob` node relocates the interface itself. That import is the one edge this file holds into `dialectic-worker`, and it closes in that node.
+
+    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.ts`
+        *   `[ ]` Delete `isProcessSimpleJobParams`, `isProcessSimpleJobPayload`, `isProcessSimpleJobDispatchedReturn`, `isProcessSimpleJobDeferredReturn`, `isProcessSimpleJobSuccessReturn` and `isProcessSimpleJobErrorReturn`, and the type imports they required.
+
+    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.test.ts`
+        *   `[ ]` Delete the checklist blocks for those six guards and the imports they required. Every case they carry is present in this module's guard suite; none is lost.
+
+    *   `[ ]` supabase/functions/_shared/`dialectic.mock.ts`
+        *   `[ ]` Delete the four symbols each for `ProcessSimpleJobParams`, `ProcessSimpleJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn` and `ProcessSimpleJobErrorReturn`, and `mockProcessSimpleJob`, and the type imports they required.
+        *   `[ ]` `_JobProcessorsDummyImpl` takes `mockProcessSimpleJob` from this module's provides for its `processSimpleJob` member.
+
+    *   `[ ]` supabase/functions/dialectic-worker/createJobContext/`createJobContext.interface.test.ts`
+        *   `[ ]` Delete the `ProcessSimpleJob*` proof blocks and their imports. Every symbol they proved is proven in this module's interface suite; none is lost.
+        *   `[ ]` The `IJobProcessors` surface case keeps its `processSimpleJob` key assertion.
+
+    *   `[ ]` processSimpleJob/`processSimpleJob.integration.test.ts`
+        *   `[ ]` The suite moves from `dialectic-worker/processSimpleJob.integration.test.ts`, its implementation import becoming the sibling path and its fixtures becoming this module's builders.
+        *   `[ ]` Every call becomes `processSimpleJob(ctx, { dbClient }, { job })`, and every `PrepareModelJobParams` and `PrepareModelJobPayload` construction and assertion takes the shapes above.
+        *   `[ ]` Rebuild the `boundCompressPrompt` and `boundCalculateAffordability` closures at both construction sites to the deps their own nodes established. Delete the `MockRagService` and `embeddingClient` constructions and the `rag_service.mock.ts` import.
+        *   `[ ]` The `PrepareModelJobDeps` literal gains `compressPrompt: boundCompressPrompt`; the `gatherArtifacts` closure's deps literal gains the bound `applyCompressionOverlay`, with `stageSlug` and `output_type` supplied on the params it forwards.
+        *   `[ ]` The integrated chain is real end to end: `processSimpleJob` → `gatherArtifacts` → `applyCompressionOverlay` → `prepareModelJob` → `calculateAffordability` → `compressPrompt` → `enqueueCompressJobs`, and on the within-budget path `prepareModelJob` → `enqueueModelCall`.
+        *   `[ ]` Mocked at the outer edge only: the Supabase client and the queue POST.
+        *   `[ ]` A case drives an oversized working set through that chain: COMPRESS rows are inserted with `parent_job_id` equal to this job, and the call returns `{ deferred: true }` having sent no notification and written no row status.
+        *   `[ ]` A case drives a within-budget working set: the queue receives one POST, the call returns `{ dispatched: true }`, and exactly one `execute_completed` event is sent.
+        *   `[ ]` A case drives an already-compressed working set: the overlay swaps the victim's content, the recount fits, and the call reaches the queue with no COMPRESS row inserted.
+        *   `[ ]` A case drives a dispatcher failure through the chain and asserts the returned error is the dispatcher's own instance, with no `dialectic_generation_jobs` write.
+
+    *   `[ ]` `directionality`
+        *   `[ ]` Deps face inward: this module imports `IJobContext` from `createJobContext`, the dispatcher's contract from `prepareModelJob`'s provides, and service-layer types from `dialectic.interface.ts`. It exports its own surface outward through `processSimpleJob.provides.ts`.
+        *   `[ ]` The edges into `vector_utils` and the retry module are removed and not replaced.
+        *   `[ ]` No cycle: `createJobContext`, `prepareModelJob`, `gatherArtifacts`, `retryJob` and `vector_utils` import nothing from this module. `dialectic.interface.ts` holds one inbound import for `IJobProcessors`, which closes when the `processJob` node relocates that interface.
+        *   `[ ]` `dialectic-worker/index.ts`, `index.test.ts`, `processJob.ts` and `processJob.test.ts` go transiently non-compilable at this node and are not edited here; each is a support file of the `processJob` or worker-root node later in this workstream.
+        *   `[ ]` The legacy `dialectic-worker/processSimpleJob.ts` retires when its last consumer switches, in the worker root's node.
+
+    *   `[ ]` `requirements`
+        *   `[ ]` `ProcessSimpleJobFn` declares `payload: unknown`, and the implementation is annotated with it and declares no parameter types of its own — proven by the compiler.
+        *   `[ ]` Every symbol `processSimpleJob.interface.ts` exports is both imported and consumed by a proof block — interface test, bidirectional enumeration.
+        *   `[ ]` Every type this module owns, less the two top-level unions, has a guard with no false positives and no false negatives — guard test, the case checklist per guard.
+        *   `[ ]` Every owned object type has a `Partial<T>` builder and an `unknown`-returning invalidator, and the function mock is the production function type — proven by the compiler.
+        *   `[ ]` No value in the implementation is annotated with a union composed at its annotation site — proven by the compiler against the named aliases this module declares.
+        *   `[ ]` No path throws; every path returns a member of `ProcessSimpleJobReturn` — unit test, one case per branch of the interaction spec.
+        *   `[ ]` The dispatcher's error is returned as the identical instance with the dispatcher's own `retriable` — unit test, instance identity assertion.
+        *   `[ ]` No path issues a `dialectic_generation_jobs` write — unit test and integration test.
+        *   `[ ]` The dispatcher receives params carrying only `dbClient`, and a payload carrying the five members and no `compressionStrategy` — unit and integration test, captured-argument assertions.
+        *   `[ ]` The recipe step resolves from a `planner_metadata` slug marker with no `recipe_step_id` present — unit test.
+        *   `[ ]` No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
+
+* `[ ]`   supabase/functions/dialectic-worker/resolveNextBlocker/resolveNextBlocker.ts **[BE] Canonize the blocker resolver as a module owning its whole contract: take the canonical `(deps, params, payload)` shape, prove the artifact identity on entry, report on a two-arm return, and own the identity type its caller builds**
 
    * `[ ]`   `objective`
-      * `[ ]`   Solve a processor that decides its own job is dead and tells the runner nothing. The function returns `void` and reports every outcome by side effect: it writes `status: 'failed'` from the `ContextWindowError` branch and from `emitImmediateFailure`, compares `currentAttempt` against `max_retries`, calls `ctx.retryJob` itself, and writes `status: 'retry_loop_failed'` when that comparison runs out — so the runner that claimed the row learns nothing, and a fourteen-branch `catch` that already knows which failures can never succeed twice throws all of them alike. In the same body it is the sole production construction site of five retired dispatcher members, it is `gatherArtifacts`'s only caller and passes neither value that function's overlay lookup requires, and it treats every non-error dispatcher result as a dispatch — so once the dispatcher reports a deferral, this file announces a completed execution for a job that enqueued no model call.
+      * `[ ]`   Solve a function whose caller must hand-build the value it operates on. `RequiredArtifactIdentity` is declared in the service-layer interface, and `processComplexJob` assembles one out of `job.results` — a `Json` column — with nine ternaries supplying `''`, `0` and `null` defaults and an IIFE scanning `BranchKey`. No guard for that type exists anywhere in `supabase/functions`. The receiver of a value owns its type and proves it; this function is that receiver and does neither.
+      * `[ ]`   Solve a signature with two slots and no payload. The function takes `(deps, params)`, and the data it operates on — the artifact identity — rides in `params` beside the five control values that scope the queries.
+      * `[ ]`   Solve a return that is neither a union nor two arms. `Promise<ResolveNextBlockerResult | null>` composes a union at the return annotation, collapses "found a blocker" and "found none" into one nullable value, and carries no error arm — so the three query failures leave by throwing into a caller that holds no `try` around this call.
+      * `[ ]`   Solve an optional dependency declared with an inline function type. `getRecipeStep?: (stepId: string) => Promise<DialecticRecipeStep | null>` is an inline type definition at a property, and its optionality forces a `if (!getRecipeStep) return false` branch that reports a missing collaborator as an artifact mismatch.
+      * `[ ]`   Solve payload members read through `isRecord` and string indexing. Each of the three loops filters `projectId` off an unproven record and resolves the model id through a helper that re-reads `model_id` and `canonicalPathParams.sourceAnchorModel` off the same record, though `model_id` is a required member of `DialecticBaseJobPayload` and every arm guard proves it.
+      * `[ ]`   Solve three dead negated-guard branches. `isDialecticRenderJobPayload` and `isDialecticExecuteJobPayload` throw a per-member diagnostic and never return `false`, so the `return false` after each is unreachable and a malformed stored payload escapes this function as a throw rather than a reported outcome.
+      * `[ ]`   Solve a module with no contract of its own: three types sit in a service-layer interface, no guard, no mock and no provides exist, and the only suite beside the implementation imports the implementation directly.
       * `[ ]`   Functional goals:
-         * `[ ]`   The function is declared `export const processSimpleJob: ProcessSimpleJobFn = async (ctx, params, payload) => { … }`, its parameter types inferred from that annotation rather than restated, and it returns `Promise<ProcessSimpleJobReturn>`.
-         * `[ ]`   `params.dbClient` replaces the `dbClient` parameter; `payload.job` replaces the `job` parameter; `payload.job.user_id` replaces every read of `projectOwnerUserId`; the `authToken` parameter leaves with the dispatcher members that consumed it.
-         * `[ ]`   The `ctx.gatherArtifacts` params literal carries `stageSlug` from the payload member this function already destructures and `output_type` from `resolvedRecipeStep.output_type`, the value it already reads into `notificationDocumentKey`, beside the four members it passes today. Neither costs a lookup.
-         * `[ ]`   The `PrepareModelJobParams` literal carries `dbClient` and nothing else.
-         * `[ ]`   The `PrepareModelJobPayload` literal carries `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance` and `inputsRequired`, and the `getSortedCompressionCandidates` import is deleted with the `compressionStrategy` member it supplied.
-         * `[ ]`   A deferral is narrowed with `isPrepareModelJobPendingReturn` and returns `{ deferred: true }` without sending any notification and without writing any row status; the parent is already `waiting_for_children` and the completion trigger resumes it.
-         * `[ ]`   A dispatch is narrowed with `isPrepareModelJobQueuedReturn`, sends `execute_completed`, and returns `{ dispatched: true }`.
-         * `[ ]`   No path writes `status: 'failed'`, `status: 'retry_loop_failed'`, a `completed_at` alongside either, or an `error_details` failure message, and no path calls `ctx.retryJob` or compares `attempt_count` against `max_retries`.
-         * `[ ]`   Every path that leaves the function by throwing today returns `{ error, retriable }` instead: each of the fourteen classified immediate failures with `retriable: false`, the `ContextWindowError` branch with `retriable: false`, and an unclassified failure with `retriable: true` — the classification the fourteen branches already perform, reported instead of discarded.
+         * `[ ]`   The module owns its interface, interface test, mock, guard, guard test and provides beside the implementation and the suite already in the folder. Consumers reach every symbol through `resolveNextBlocker.provides.ts`.
+         * `[ ]`   The function is declared `export const resolveNextBlocker: ResolveNextBlockerFn = async (deps, params, payload) => { … }`, its parameter types inferred from that annotation, returning `Promise<ResolveNextBlockerReturn>`.
+         * `[ ]`   `isResolveNextBlockerPayload(payload)` is the first statement of the function's `try`; its `false` return produces the error arm and its delegated throw reaches the `catch`.
+         * `[ ]`   `params` carries `projectId`, `sessionId`, `stageSlug`, `iterationNumber` and `model_id`; `payload` carries `requiredArtifactIdentity` and is typed `unknown` at the annotation.
+         * `[ ]`   `deps.getRecipeStep` is required and typed `GetRecipeStepFn`; the `if (!getRecipeStep) return false` branch is deleted.
+         * `[ ]`   A resolved blocker returns `{ blocker: <the result> }`; an exhausted search returns `{ noBlocker: true }`; each of the three query failures returns `{ error, retriable: true }`; a malformed stored payload reaching the `catch` returns `{ error, retriable: false }`.
+         * `[ ]`   `ResolveNextBlockerResult.status` is typed `DialecticJobRow['status']`.
+         * `[ ]`   `RequiredArtifactIdentity.documentKey` is typed `FileType`.
+         * `[ ]`   Each loop proves the row's payload by the guard its `job_type` selects, then reads `projectId` and `model_id` off the proven payload; `extractModelIdFromPayload` and every `isRecord` call in this file are deleted with the reads they served.
       * `[ ]`   Non-functional constraints:
-         * `[ ]`   Every failure notification the `catch` sends on a classified branch is unchanged in payload, recipient and condition: `sendContributionGenerationFailedEvent`, `sendContributionFailedNotification` and the `job_failed` `sendJobNotificationEvent`, each fired on a non-retriable classification exactly where it fires now. The unclassified path notifies nothing, as it does now.
-         * `[ ]`   The three notifications that accompanied the `retry_loop_failed` write leave this file with that write and are not replaced here. Whether a job has failed terminally is `attempt_count` against `max_retries`, which the runner holds; the terminal statement is sent by `handleJob` in `dialectic-worker/index.ts`, in that file's node.
-         * `[ ]`   The entry narrowing of the job payload moves inside the existing `try`. `isDialecticExecuteJobPayload` throws a per-member diagnostic rather than returning `false`, and the surrounding `try` converts that throw to `{ error, retriable: false }` as it converts every other throw in this body.
-         * `[ ]`   The `FailedAttemptError` and `ModelProcessingResult` constructions leave with the retry branch and the terminal write that read them, and their imports go with them. The runner builds the `FailedAttemptError[]` a retry requires from the provider row it resolves.
-         * `[ ]`   The opening `Starting attempt N/M` log line keeps reading `attempt_count` and `max_retries` off the row. It reports the attempt; it decides nothing.
-         * `[ ]`   `sessionData` stays and keeps every use it has — the assembler options, the iteration number it supplies to `gatherArtifacts` and to every notification. What ends is passing it onward.
-         * `[ ]`   Every other behavior is unchanged: the stage and recipe resolution, the provider read, the overlay-row read, the initial-prompt resolution, the continuation routing, the `promptConstructionPayload` construction, the `PrepareModelJobExecutionError` unwrapping, the `execute_started` and `dialectic_contribution_started` events, and every log line.
-      * `[ ]`   Each goal is proven by a named case in this file's unit or integration suite.
+         * `[ ]`   The three-tier priority order is unchanged: RENDER, then EXECUTE, then PLAN, each query scoped by `session_id`, `stage_slug`, `iteration_number`, `job_type` and the five in-progress statuses, and each loop returning on its first match.
+         * `[ ]`   The defensive `completed`/`failed` status skip at the top of each loop is unchanged.
+         * `[ ]`   `isDialecticSkeletonJobPayload` stays the PLAN loop's non-throwing selector and keeps its `continue`: a PLAN row carrying a first-pass plan payload is not a blocker, and skipping it is the correct outcome rather than a failure.
+         * `[ ]`   Every log line keeps its level, its message and its position.
+         * `[ ]`   `jobProducesDocumentKey` keeps its three-arm matching logic, its `output_type` preference and its `canonicalPathParams.contributionType` fallback, and stays a module-private predicate returning a boolean.
+         * `[ ]`   Every moved symbol keeps its production name.
+      * `[ ]`   Each goal is proven by a named case in this module's interface, guard or unit suite.
 
    * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer orchestration of one EXECUTE job: resolve the stage and its recipe step, assemble the prompt, gather the artifacts, hand the result to the dispatcher, and report what happened as a return value.
-      * `[ ]`   The role is correct because dispatch and deferral are this function's own outcomes — it is the only party that knows whether a model call was enqueued or the job is waiting on compression children. Failure is not in that set: whether a failed job is retried is a queue policy applied to a row, and the runner holds the row.
+      * `[ ]`   App-layer resolution: prove the artifact identity it was handed, search the in-progress job rows for the one that will produce that artifact, and report which job blocks the caller or that none does.
+      * `[ ]`   The role is correct because the identity is untrusted data assembled from a `Json` column by a caller that cannot prove it, and this function is the boundary where it is proven before any query is scoped by it.
       * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not write `status: 'failed'`, `'retrying'` or `'retry_loop_failed'` on any path, and do not write a `completed_at` or an `error_details` failure message.
-         * `[ ]`   Do not read `max_retries` or `attempt_count` for a decision, and do not call `ctx.retryJob`.
-         * `[ ]`   Do not decide affordability, compress anything, or read a compression artifact; the dispatcher composes those and reports one outcome.
-         * `[ ]`   Do not set `waiting_for_children` on the deferral path; `compressPrompt` sets the parent's status and the completion trigger resumes it.
-         * `[ ]`   Do not edit `dialectic-service/dialectic.interface.ts`, `gatherArtifacts`, `applyCompressionOverlay`, `prepareModelJob`, `processJob.ts` or `dialectic-worker/index.ts`; each has its own node. This file conforms to the contracts they declare and supplies the values they require.
-         * `[ ]`   Do not decompose this file or extract from it. Its length is not this node's concern.
+         * `[ ]`   Do not write any row, and do not decide what the caller does with a resolved blocker.
+         * `[ ]`   Do not re-chain a job, set `waiting_for_prerequisite`, or read `attempt_count` or `max_retries`.
+         * `[ ]`   Do not declare `DialecticJobRow`, `DialecticRecipeStep`, `JobType`, `FileType` or `BranchKey`; each is imported from the interface that owns it.
+         * `[ ]`   Do not edit `processComplexJob`; its import path, its call shape and the identity construction it stops performing are that module's node.
+         * `[ ]`   Do not extract `jobProducesDocumentKey` or `jobProducesDocumentKey`'s arm branches into their own files.
 
    * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/processSimpleJob.ts` — one EXECUTE job's pass from payload narrowing through assembly and gathering to dispatch, and the outcome it reports.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   What this job needs assembled and gathered before a model call can be prepared.
-         * `[ ]`   Which of the three outcomes the pass reached, and for a failure, whether a later attempt could succeed.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Whether a retriable failure is retried, and what a job's terminal state is, both owned by the runner.
-         * `[ ]`   Caps, wallet, affordability, compression and the queue, all owned by `prepareModelJob` and what it composes.
-         * `[ ]`   `ProcessSimpleJobFn`, `ProcessSimpleJobParams`, `ProcessSimpleJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobErrorReturn`, `ProcessSimpleJobReturn` and `IJobProcessors`, all owned by `dialectic-service/dialectic.interface.ts` and declared in the `createJobContext` node, which also carries their interface-test cases. This node declares no type and mocks no symbol; it conforms one implementation to a contract that already exists.
+      * `[ ]`   Bounded context is `dialectic-worker/resolveNextBlocker/` — one search for the job that will produce a required artifact, the identity that names that artifact, and the outcome the search reports.
+      * `[ ]`   Inside boundary: `RequiredArtifactIdentity` and its guard; this function's deps, params, payload and return arms; the three-tier priority and the per-arm document-key matching.
+      * `[ ]`   Outside boundary: what the caller does with a blocker; the recipe-step lookup itself, supplied as an injected collaborator; the job row and payload types, owned by the service-layer interface and the payload family.
 
    * `[ ]`   `deps`
-      * `[ ]`   Removed provider: `_shared/utils/vector_utils.ts` (`getSortedCompressionCandidates`).
-         * `[ ]`   Layer classification: shared utility.
-         * `[ ]`   Direction: inbound, and closed by this node — this file imported the concrete scorer solely to relay it, and `createJobContext` supplies it to `compressPrompt` instead.
-         * `[ ]`   Purpose retired: naming a compression collaborator from an orchestrator that never calls one.
-      * `[ ]`   Removed provider: `createJobContext/JobContext.interface.ts` (`RetryJobFn`), and with it every read of `ctx.retryJob` from this file.
-         * `[ ]`   Layer classification: app-layer context contract.
-         * `[ ]`   Direction: inbound, and closed by this node — the retry dispatcher is read from the root by `handleJob`, one layer up.
-         * `[ ]`   Purpose retired: a processor scheduling its own next attempt.
-      * `[ ]`   Provider: `./prepareModelJob/prepareModelJob.provides.ts` (`isPrepareModelJobQueuedReturn` and `isPrepareModelJobPendingReturn`, beside `isPrepareModelJobErrorReturn`, `PrepareModelJobParams`, `PrepareModelJobPayload` and `PrepareModelJobExecutionError`, all moving to the barrel from the internal files this file imports them from today).
-         * `[ ]`   Layer classification: sibling app-layer module, owner of the dispatcher's contract.
-         * `[ ]`   Direction: inbound; this file already imports that module's types, guards and error class, so no new direction is opened — only the import path becomes the module's public surface.
-         * `[ ]`   Purpose: narrow each arm of the return this function receives, and construct the arguments the dispatcher declares.
-      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` (`ProcessSimpleJobFn`, `ProcessSimpleJobReturn`).
-         * `[ ]`   Layer classification: service-layer contract surface, already imported by this file for `DialecticRecipeStep`, `DialecticJobRow`, `DialecticSessionRow` and `PromptConstructionPayload`.
-         * `[ ]`   Direction: inbound; no new direction is opened.
-         * `[ ]`   Purpose: annotate the implementation with the contract it satisfies, so a divergence is a compile error rather than a silent difference.
-      * `[ ]`   Confirm:
-         * `[ ]`   The deps slot is `IJobContext`, unnarrowed, exactly as this function receives it today. It arrives from the `createJobContext` node with its ten retired members gone and `retryJob` retyped to `BoundRetryJobFn`; this file reads none of the eleven after this node, so no member of that interface changes for this consumer.
-         * `[ ]`   `ctx.gatherArtifacts` carries the two added params as of the `gatherArtifacts` node, and `ctx.prepareModelJob` carries the narrowed params, the widened payload and the two-flavor success arm as of the `prepareModelJob` node. This node supplies and narrows; it changes neither contract.
-         * `[ ]`   No reverse dependency: `prepareModelJob`, `gatherArtifacts`, `retryJob` and `vector_utils` import nothing from this file.
-         * `[ ]`   `FailedAttemptError` and `ModelProcessingResult` are no longer imported; every other import from `dialectic-service/dialectic.interface.ts` stands.
-      * `[ ]`   `context_slice`
-         * `[ ]`   From `ctx`: `logger`, `notificationService`, `promptAssembler`, `downloadFromStorage`, `gatherArtifacts` and `prepareModelJob` — the six members this body reads, one fewer than today.
-         * `[ ]`   From the dispatcher's module: the three return guards, the two argument types and `PrepareModelJobExecutionError` only.
-
-   * `[ ]`   `processSimpleJob.interaction.spec`
-      * `[ ]`   Branch: the job payload is malformed.
-         * `[ ]`   Condition: `payload.job.payload` fails a member check inside the `try`.
-         * `[ ]`   Decision: `isDialecticExecuteJobPayload(payload.job.payload)` throws its per-member diagnostic; the negated-guard block that follows is the narrowing device the compiler requires.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `{ error: <the guard's diagnostic>, retriable: false }` through the `catch`. No row is written.
-      * `[ ]`   Branch: a resolution step fails — session, provider, project, domain, stage, system prompt, overlays, recipe step, initial prompt, assembler or continuation content.
-         * `[ ]`   Condition: any of the existing checks inside the `try` fails.
-         * `[ ]`   Decision: the existing throw for that check, with its exact message.
-         * `[ ]`   Dependency call: the reads already made on that path, unchanged.
-         * `[ ]`   Outcome: the `catch` classifies the message as it does now and returns `{ error, retriable: false }` for a classified message, `{ error, retriable: true }` otherwise. No row is written.
-      * `[ ]`   Branch: gathering fails.
-         * `[ ]`   Condition: `ctx.gatherArtifacts` returns its error arm.
-         * `[ ]`   Decision: `isGatherArtifactsErrorReturn(gatherResult)`.
-         * `[ ]`   Dependency call: `ctx.gatherArtifacts({ dbClient, projectId, sessionId, iterationNumber, stageSlug, output_type }, { inputsRequired })` — the four params it takes today plus the two the overlay lookup requires.
-         * `[ ]`   Outcome: `gatherResult.error` is thrown to the `catch` as it is today, and the `catch` classifies it. On success `gatherResult.artifacts` becomes `resourceDocuments`, unchanged.
-      * `[ ]`   Branch: the dispatcher returns its error arm.
-         * `[ ]`   Condition: `ctx.prepareModelJob({ dbClient }, { job, providerRow, promptConstructionPayload, inputsRelevance, inputsRequired })` returns the error arm.
-         * `[ ]`   Decision: `isPrepareModelJobErrorReturn` true; then `orchestratorError instanceof ContextWindowError`.
-         * `[ ]`   Dependency call: none beyond the dispatcher call already made.
-         * `[ ]`   Outcome: a `ContextWindowError` is rethrown as itself; anything else is rethrown as `PrepareModelJobExecutionError` carrying the message, the `retriable` flag and the cause. Both reach the `catch`, unchanged.
-      * `[ ]`   Branch: the dispatcher deferred.
-         * `[ ]`   Condition: the dispatcher returned `{ waiting_for_children: true }`.
-         * `[ ]`   Decision: `isPrepareModelJobPendingReturn`.
-         * `[ ]`   Dependency call: none. No notification, no row write.
-         * `[ ]`   Outcome: `{ deferred: true }`. The row is already `waiting_for_children`, set by `compressPrompt` when it spawned the children, and the DB completion trigger wakes this job when they finish.
-      * `[ ]`   Branch: the dispatcher queued the call.
-         * `[ ]`   Condition: the dispatcher returned `{ queued: true }`.
-         * `[ ]`   Decision: `isPrepareModelJobQueuedReturn`.
-         * `[ ]`   Dependency call: `ctx.notificationService.sendJobNotificationEvent` with `type: 'execute_completed'` and the session, stage, job id, step key, model id, iteration number and document key it sends today, when `payload.job.user_id` is present.
-         * `[ ]`   Outcome: `{ dispatched: true }`.
-      * `[ ]`   Branch: the dispatcher returned neither arm.
-         * `[ ]`   Condition: no return guard matches.
-         * `[ ]`   Decision: both arm guards false.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `prepareModelJob returned an invalid result shape` is thrown to the `catch`, which returns it as `{ error, retriable: false }`.
-      * `[ ]`   Branch, in the `catch`: the failure is a `ContextWindowError`.
-         * `[ ]`   Condition: the unwrapped error is a `ContextWindowError`.
-         * `[ ]`   Decision: `error instanceof ContextWindowError`.
-         * `[ ]`   Dependency call: `ctx.logger.error`, then the three notifications this branch sends today — the `other_generation_failed` event, the `contribution_generation_failed` notification and, when a document key is known, the `job_failed` event — each with its existing `CONTEXT_WINDOW_ERROR` code and message. The `dialectic_generation_jobs` update that stood here is deleted.
-         * `[ ]`   Outcome: `{ error, retriable: false }`.
-      * `[ ]`   Branch, in the `catch`: the failure matches one of the fourteen classified messages.
-         * `[ ]`   Condition: the lowercased message matches that branch's existing test.
-         * `[ ]`   Decision: the existing `lower.includes(…)` or `lower.startsWith(…)` comparison, or `prepareJobRetriable === false`, in the order they stand.
-         * `[ ]`   Dependency call: the three notifications `emitImmediateFailure` sends today, with that branch's existing code and message. The `dialectic_generation_jobs` update inside that helper is deleted, so the helper notifies and no longer writes.
-         * `[ ]`   Outcome: `{ error, retriable: false }` in place of the `throw error` that followed each call.
-      * `[ ]`   Branch, in the `catch`: the failure matches none of them.
-         * `[ ]`   Condition: no classification matched.
-         * `[ ]`   Decision: none.
-         * `[ ]`   Dependency call: `ctx.logger.warn` with the attempt and the model, its message built from `error.message` in place of the deleted `failedAttempt.error`. No notification, as today.
-         * `[ ]`   Outcome: `{ error, retriable: true }`. The retry comparison, the `ctx.retryJob` call, the `retry_loop_failed` update and its three notifications are all deleted from this path.
-      * `[ ]`   Ordering and side effects: exactly one gather call and one dispatcher call per invocation; no `dialectic_generation_jobs` write on any path; at most one set of failure notifications, and none on the retriable classification or the deferral; every success and every failure leaves the function by returning a member of the union, and nothing leaves it by throwing.
-
-   * `[ ]`   `processSimpleJob.test.ts`
-      * `[ ]`   Every case calls `processSimpleJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call, the four-field header being a claim about the body.
-      * `[ ]`   Every case's `PrepareModelJobParams` expectation asserts one member, `dbClient`; every `PrepareModelJobPayload` expectation asserts `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance` and `inputsRequired`, and that no `compressionStrategy`, `authToken` or `sessionData` is present anywhere in either.
-      * `[ ]`   Each case that asserts a thrown error asserts the returned error arm instead: its `error.message` is the message that case throws today and its `retriable` is `false` for each of the fourteen classified failures and for the `ContextWindowError` case, and each also asserts that no `dialectic_generation_jobs` update was issued.
-      * `[ ]`   New case: an unclassified failure returns the error arm with `retriable: true`, arranged beside a classified case in the same file so the flag cannot be a constant.
-      * `[ ]`   New case: a dispatcher returning `{ waiting_for_children: true }` returns `{ deferred: true }`, calls `ctx.notificationService.sendJobNotificationEvent` zero times and writes `dialectic_generation_jobs` zero times. Arranged alongside a queued case in the same file so the assertion cannot hold if the branch were deleted.
-      * `[ ]`   New case: a dispatcher returning `{ queued: true }` returns `{ dispatched: true }` and sends exactly one `execute_completed` event carrying the session, stage, job id, step key, model id, iteration number and document key it carries today.
-      * `[ ]`   The existing invalid-shape case asserts the returned error arm carrying `prepareModelJob returned an invalid result shape` with `retriable: false`.
-      * `[ ]`   New case: the `gatherArtifacts` call receives `stageSlug` equal to the payload's own value and `output_type` equal to `resolvedRecipeStep.output_type`, captured at the call site, alongside the four params it receives today.
-      * `[ ]`   The three cases that assert `ctx.retryJob` is called, and the case asserting the `retry_loop_failed` row update and its three notifications, are deleted with the branch they covered. The retry decision is proven in `dialectic-worker/index.ts`'s node, against the runner that now makes it.
-      * `[ ]`   New case: a failure the function classifies as retriable calls `ctx.retryJob` zero times and writes `dialectic_generation_jobs` zero times, so the deleted branch cannot return unnoticed.
-      * `[ ]`   Every case that asserts a failure notification keeps its arrangement and its assertions: the `other_generation_failed` event, the `contribution_generation_failed` notification and the `job_failed` event, each with its existing code and message.
-      * `[ ]`   Every remaining case — the error propagation, the gather failure, the continuation routing, the assembler paths, the `execute_started` and `dialectic_contribution_started` events — keeps its coverage and its assertions.
-
-   * `[ ]`   `processSimpleJob.ts`
-      * `[ ]`   The function is declared `export const processSimpleJob: ProcessSimpleJobFn = async (ctx, params, payload) => { … }`; the five-parameter list, its inline types and the `SupabaseClient`/`Database` imports it required are deleted. `ProcessSimpleJobFn` and `ProcessSimpleJobReturn` are imported from `dialectic-service/dialectic.interface.ts` beside the imports already taken from that file.
-      * `[ ]`   `params.dbClient` is destructured once at the top and replaces every `dbClient` reference; `payload.job` replaces every `job` reference; `payload.job.user_id` replaces every `projectOwnerUserId` reference, including each `if (projectOwnerUserId)` gate, which becomes the same truthiness check on that value.
-      * `[ ]`   The entry `isRecord`/`isDialecticExecuteJobPayload` check and the payload destructure that follows it move inside the `try`, ahead of the first `stageSlug` check; the hand-thrown `Job … does not have a valid 'execute' payload.` message stays as the negated-guard block's only statement and the diagnostic that reaches the caller is the guard's own.
-      * `[ ]`   The `ctx.gatherArtifacts` params literal gains `stageSlug` and `output_type`; the destructured `stageSlug` and `resolvedRecipeStep.output_type` that supply them are already in scope at that line.
-      * `[ ]`   The `PrepareModelJobParams` literal drops `authToken`, `job`, `projectOwnerUserId` and `providerRow`, leaving `dbClient`. The `PrepareModelJobPayload` literal drops `compressionStrategy` and gains `job` and `providerRow`. The `getSortedCompressionCandidates` import is deleted.
-      * `[ ]`   The `isPrepareModelJobSuccessReturn` check is replaced by the two arm guards: `isPrepareModelJobPendingReturn` returns `{ deferred: true }`, `isPrepareModelJobQueuedReturn` gates the notification block and is followed by `return { dispatched: true }`, and the invalid-shape throw follows both. Every import this file takes from `prepareModelJob.interface.ts` and `prepareModelJob.guard.ts` moves to `prepareModelJob.provides.ts`, gaining the two arm guards and losing `isPrepareModelJobSuccessReturn`.
-      * `[ ]`   The `dbClient.from('dialectic_generation_jobs').update({ status: 'failed', … })` call in the `ContextWindowError` branch is deleted and the branch's bare `return` becomes `return { error, retriable: false }`; its `ctx.logger.error` call and its three notifications stand.
-      * `[ ]`   The same update inside `emitImmediateFailure` is deleted, leaving the helper to send its three notifications; each of the fourteen `await emitImmediateFailure(…); throw error;` pairs becomes `await emitImmediateFailure(…); return { error, retriable: false };`.
-      * `[ ]`   The `failedAttempt` and `modelProcessingResult` constructions, the `currentAttempt < max_retries` comparison, the `ctx.retryJob` call, the `retry_loop_failed` update with its `finalUpdateError` log line, and the three notifications that followed it are deleted; what remains on that path is the existing `ctx.logger.warn`, its message reading `error.message`, followed by `return { error, retriable: true }`. The `FailedAttemptError` and `ModelProcessingResult` imports go with them.
-      * `[ ]`   The end of the `try`, after the dispatch arm's notification block, returns `{ dispatched: true }`.
-      * `[ ]`   Nothing else in the file changes: every query, every guard call, the recipe resolution, the initial-prompt resolution, the continuation routing, the `promptConstructionPayload` construction, the `PrepareModelJobExecutionError` unwrapping, every notification and every log line stand exactly as they are.
-
-   * `[ ]`   `processSimpleJob.integration.test.ts`
-      * `[ ]`   Every call becomes `processSimpleJob(ctx, { dbClient }, { job })`, and every `PrepareModelJobParams` and `PrepareModelJobPayload` construction and assertion takes the shapes above.
-      * `[ ]`   The hand-built `boundCompressPrompt` and `boundCalculateAffordability` closures at both construction sites are rebuilt to the deps their own nodes established: `compressPrompt` from `applyCompressionOverlay`, `enqueueCompressJobs`, `fileManager`, `constructStoragePath`, `downloadFromStorage`, `countTokens` and `logger`; `calculateAffordability` from the three members its node leaves it. The `MockRagService` and `embeddingClient` constructions and the `rag_service.mock.ts` import are deleted — no chain in this file reaches a retrieval service after the cutover.
-      * `[ ]`   The `PrepareModelJobDeps` literal gains `compressPrompt: boundCompressPrompt`, and the `gatherArtifacts` closure's deps literal gains the bound `applyCompressionOverlay` its node requires, with `stageSlug` and `output_type` supplied on the params the closure forwards.
-      * `[ ]`   The integrated chain is real end to end: `processSimpleJob` → `gatherArtifacts` → `applyCompressionOverlay` → `prepareModelJob` → `calculateAffordability` → `compressPrompt` → `enqueueCompressJobs`, and on the within-budget path `prepareModelJob` → `enqueueModelCall`. No function in that chain is mocked, stubbed or replaced by a builder.
-      * `[ ]`   Mocked at the outer edge only: the Supabase client and the queue POST. Storage reads the overlay performs are served from the mocked client, so the suite proves nothing about the storage adapter itself.
-      * `[ ]`   A case drives an oversized working set through that chain: COMPRESS rows are inserted with `parent_job_id` equal to this job, and the call returns `{ deferred: true }` having sent no notification and written no row status.
-      * `[ ]`   A case drives a within-budget working set through the same chain: the queue receives one POST, the call returns `{ dispatched: true }`, and exactly one `execute_completed` event is sent.
-      * `[ ]`   A case drives an already-compressed working set: the overlay swaps the victim's content, the recount fits, and the call reaches the queue without any COMPRESS row being inserted.
-      * `[ ]`   A case drives a failure through the chain and asserts the returned error arm with no `dialectic_generation_jobs` write, so the deleted status writes are proven absent against real collaborators and not only against mocks.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this file reads the job context it was handed and imports the dispatcher's contract from that module's `provides` barrel; it exports nothing back to either, and it drops its import of the concrete scorer.
-      * `[ ]`   The edge into `vector_utils` and the edge into the retry module are both removed from this file; neither is replaced, and the graph loses two directions.
-      * `[ ]`   No cycle: `prepareModelJob`, `gatherArtifacts`, `retryJob` and `vector_utils` import nothing from this file.
-      * `[ ]`   The composition root remains the only place a concrete collaborator is chosen; after this node no orchestrator names one.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   The implementation is annotated `ProcessSimpleJobFn` and declares no parameter types of its own, so a divergence between the declared contract and the implementation is a compile error — proven by the compiler.
-      * `[ ]`   The dispatcher receives params carrying only `dbClient`, and a payload carrying `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance` and `inputsRequired` and no `compressionStrategy` — unit test and integration test, captured-argument assertions.
-      * `[ ]`   `gatherArtifacts` receives `stageSlug` from the payload and `output_type` from `resolvedRecipeStep.output_type` — unit test and integration test, captured-argument assertions.
-      * `[ ]`   A deferral returns `{ deferred: true }`, sends no notification and writes no row status — unit test and integration test.
-      * `[ ]`   A dispatch returns `{ dispatched: true }` and sends exactly one `execute_completed` event carrying the fields it carries today — unit test and integration test.
-      * `[ ]`   A result that is neither arm returns the error arm carrying `prepareModelJob returned an invalid result shape` with `retriable: false` — unit test.
-      * `[ ]`   Each of the fourteen classified failures and the `ContextWindowError` returns the error arm with its existing message and `retriable: false`, and an unclassified failure returns `retriable: true` — unit test, both classifications arranged in one file.
-      * `[ ]`   No path writes `status: 'failed'` or `status: 'retry_loop_failed'`, and no path calls `ctx.retryJob` — unit test, update-argument and call-count assertions across the failure cases; integration test, against real collaborators.
-      * `[ ]`   Every failure notification fires on the same condition and with the same code and message it does now, and the retriable path sends none — unit test.
-      * `[ ]`   Every gather-failure, continuation and assembler path behaves exactly as it does now — unit test, existing cases with their `Act` lines and error assertions restated.
-
-
-* `[ ]`   supabase/functions/dialectic-worker/processComplexJob.ts **[BE] Take the canonical `(deps, params, payload)` shape and report the planning outcome on a two-arm return: read the owner and the JWT off the job row, return every failure as a classified error arm, and stop writing `failed` on any path**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve a planner that decides its own job is dead and tells the runner nothing. Six configuration checks and the outer `catch` each write `status: 'failed'` with a `completed_at` and an `error_details.message` directly onto `dialectic_generation_jobs`, and the function returns `void`, so the runner that claimed the job learns nothing and the `max_retries` column never applies to a PLAN job. A recipe that could not be read and a Postgrest error during enqueue are recorded identically, though one can never succeed on a retry and the other frequently can. Three further failures — the two payload-guard throws and the `stageSlug` throw — leave the function by throwing, so a caller that wanted to read an outcome would still have to catch one. And the function takes five positional parameters, two of which carry values the job row already holds: `projectOwnerUserId` duplicates `job.user_id`, and `authToken` duplicates the `user_jwt` the row's own payload carries.
-      * `[ ]`   Functional goals:
-         * `[ ]`   The function is declared `export const processComplexJob: ProcessComplexJobFn = async (ctx, params, payload) => { … }`, its parameter types inferred from that annotation rather than restated, and it returns `Promise<ProcessComplexJobReturn>`. The hand-written parameter list is what let the declared contract and the implementation diverge unnoticed.
-         * `[ ]`   `params.dbClient` replaces the `dbClient` parameter; `payload.job` replaces the `job` parameter; `payload.job.user_id` replaces `projectOwnerUserId` as the notification recipient; and `payload.job.payload.user_jwt` replaces `authToken` at both `ctx.planComplexStage` call sites.
-         * `[ ]`   Each of the six configuration failures returns the error arm carrying an `Error` built from the message it writes today, with `retriable: false` — the same rows would be read again and the same check would fail.
-         * `[ ]`   The two payload-guard failures and the missing-`stageSlug` failure return the error arm carrying an `Error` built from the message each throws today, with `retriable: false`, in place of throwing.
-         * `[ ]`   The outer `catch` returns the error arm carrying the `Error` it already derives, with `retriable: false` when the caught value is a `ContextWindowError` and `retriable: true` otherwise; the enqueue and update failures it catches are transient.
-         * `[ ]`   No path writes `status: 'failed'`, `completed_at` alongside it, or an `error_details` failure message, and no path leaves the function by throwing.
-         * `[ ]`   Every path that completes its planning pass returns `{ planned: true }`.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   Every deferral and completion write this function owns is unchanged in condition, column set and value: `waiting_for_children` on the four paths that set it, `waiting_for_prerequisite` on the two that re-chain a skeleton, and `completed` on the three that finish a parent or a childless skeleton. Those are a planner's own outcomes, not a failure verdict, and none of them moves to the runner.
-         * `[ ]`   The `failureReason` construction in the `catch` — the `ContextWindowError` branch and the branch reading `code`, `details` and `collidedIdempotencyKeys` off the caught value — is unchanged; its result becomes the message of the returned `Error` instead of an `error_details` column value.
-         * `[ ]`   The `job_failed` notification in the `catch` is sent only when the failure is classified non-retriable, so a job the runner will retry is never told it failed. Its payload, its `step_key`, its `errCode` selection and its best-effort `try`/`catch` wrapper are otherwise unchanged.
-         * `[ ]`   The `job` parameter's inline union `DialecticJobRow & { payload: DialecticPlanJobPayload | DialecticSkeletonJobPayload }` leaves with that parameter list. `DialecticSkeletonJobPayload` extends `DialecticPlanJobPayload`, so the `ProcessComplexJobPayload` this function now receives admits every value the union did, and the body's `isDialecticSkeletonJobPayload` check narrows to the skeleton arm exactly as it does now. The `DialecticSkeletonJobPayload` type import stays — the body's guard call still needs it.
-         * `[ ]`   Every log line, every query, the recipe resolution, the child-job tracking, the planner delegation, the skeleton construction and the idempotent-replay handling are unchanged.
-         * `[ ]`   Both call sites go transiently non-compilable and are not edited here: `processJob.ts` calls this function with five positional arguments, and `dialectic-worker/index.ts` wraps it in a `defaultProcessors` adapter typed `Promise<void>` that discards the return. Each belongs to that file's own node later in this workstream.
-      * `[ ]`   Each goal is proven by a named case in this file's suites.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer planning: read a stage's recipe, decide which steps are ready, enqueue their child jobs, record the waiting or completed state the parent now occupies, and report the pass as a return value.
-      * `[ ]`   The role is correct because deferral and completion are the planner's own outcomes — it is the only party that knows a parent is waiting on children or has none left to wait for. Failure is not in that set: whether a failed job is retried is a queue policy applied to a row, and the runner holds the row.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not write `status: 'failed'`, `retrying` or `retry_loop_failed` on any path.
-         * `[ ]`   Do not read `max_retries` or `attempt_count`, and do not call `retryJob`.
-         * `[ ]`   Do not change any deferral or completion write, or the conditions that select them.
-         * `[ ]`   Do not edit `dialectic-service/dialectic.interface.ts`; the `createJobContext` node declares every `ProcessComplexJob*` symbol this file consumes, and this node conforms one implementation to contracts that already exist.
-         * `[ ]`   Do not edit `processJob.ts`, `dialectic-worker/index.ts` or `planComplexStage`; each has its own node.
-         * `[ ]`   Do not decompose this file, and do not extract from it. Its length is not this node's concern.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/processComplexJob.ts` — one PLAN or skeleton job's pass from payload narrowing through recipe resolution and child enqueue to the parent's waiting or completed state, and the outcome it reports.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Which recipe steps are ready, what child jobs they produce, and which waiting or completed state the parent lands in.
-         * `[ ]`   Whether a planning failure could succeed on a later attempt.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Whether a retriable failure is retried, and what a job's terminal state is, both owned by the runner.
-         * `[ ]`   `ProcessComplexJobFn`, `ProcessComplexJobParams`, `ProcessComplexJobPayload`, `ProcessComplexJobSuccessReturn`, `ProcessComplexJobErrorReturn`, `ProcessComplexJobReturn` and `IJobProcessors`, all owned by `dialectic-service/dialectic.interface.ts` and declared in the `createJobContext` node, which also carries their interface-test cases, their builders and invalidators in `_shared/dialectic.mock.ts`, and their guards in `_shared/utils/type-guards/type_guards.dialectic.ts`. This node declares no type, mocks no symbol and writes no guard.
-         * `[ ]`   The granularity planner and child-payload construction, owned by `planComplexStage`.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `createJobContext/JobContext.interface.ts` (`IPlanJobContext`), which becomes this function's declared deps slot rather than its fourth positional parameter.
-         * `[ ]`   Layer classification: app-layer context contract, constructed at the composition root.
-         * `[ ]`   Direction: inbound; this file already takes `ctx: IPlanJobContext` and reads four members off it, so no new direction is opened and no wiring changes at the root.
-         * `[ ]`   Purpose: supply the collaborators this planner invokes, unnarrowed, exactly as it receives them today.
-      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` (`ProcessComplexJobFn`, `ProcessComplexJobReturn`), beside the `DialecticJobRow`, `DialecticPlanJobPayload`, `DialecticSkeletonJobPayload`, `RequiredArtifactIdentity`, `BranchKey` and recipe-type imports this file already takes from it.
+      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` — `DialecticJobRow`, `DialecticRecipeStep`, `JobType`, `FileType`, `BranchKey` and `ILogger`.
          * `[ ]`   Layer classification: service-layer contract surface.
-         * `[ ]`   Direction: inbound; no new direction is opened.
-         * `[ ]`   Purpose: annotate the implementation with the contract it satisfies, so a divergence is a compile error rather than a silent difference.
-      * `[ ]`   Removed provider: none. `projectOwnerUserId` and `authToken` were positional values, not collaborators; each is read from the job row after this node.
+         * `[ ]`   Direction: inbound; that file imports nothing from this module after this node.
+         * `[ ]`   Purpose: the row, recipe-step, job-type, file-type and logger types this module's contract composes.
+      * `[ ]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` — `isDialecticRenderJobPayload`, `isDialecticExecuteJobPayload` and `isDialecticSkeletonJobPayload`.
+         * `[ ]`   Layer classification: shared guard package.
+         * `[ ]`   Direction: inbound; the payload family owns these and this module calls them.
+         * `[ ]`   Purpose: prove each row's payload by the arm its `job_type` column selects, and select the skeleton arm inside the shared `PLAN` type.
+      * `[ ]`   Provider: `deps.dbClient`, a `SupabaseClient<Database>` constructed at the composition root.
+         * `[ ]`   Layer classification: infrastructure adapter.
+         * `[ ]`   Direction: inbound, injected; this module constructs no client.
+         * `[ ]`   Purpose: the three job-row queries.
+      * `[ ]`   Provider: `deps.getRecipeStep`, typed `GetRecipeStepFn`, supplied by the caller.
+         * `[ ]`   Layer classification: injected app-layer collaborator.
+         * `[ ]`   Direction: inbound; required, not optional, so the graph is complete at construction.
+         * `[ ]`   Purpose: resolve a skeleton PLAN job's recipe step so its `output_type` can be matched against the required document key.
+      * `[ ]`   Removed provider: `_shared/utils/type_guards.ts` (`isRecord`), and with it every unproven-record read in this file.
+         * `[ ]`   Layer classification: shared utility.
+         * `[ ]`   Direction: inbound, and closed by this node.
+         * `[ ]`   Purpose retired: reaching payload members through a record check where an arm guard proves the type.
       * `[ ]`   Confirm:
-         * `[ ]`   `IPlanJobContext` is unchanged in shape: no member is added, removed or retyped, and this node narrows the deps slot no further than the interface this function receives today.
-         * `[ ]`   No reverse dependency: `planComplexStage`, `resolveNextBlocker` and `createJobContext` import nothing from this file.
-         * `[ ]`   The `SupabaseClient` and `Database` imports stay — `params.dbClient` still carries that type, declared by `ProcessComplexJobParams`.
+         * `[ ]`   No reverse dependency: `processComplexJob`, `createJobContext` and the guard package import nothing from this module.
+         * `[ ]`   `deps` is typed strong and is never guarded at function entry; only `payload` is proven.
+         * `[ ]`   `dbClient` is a dep here, not a per-invocation param, because this function is injected as a whole collaborator and holds no call-scoped client.
       * `[ ]`   `context_slice`
-         * `[ ]`   From `ctx`: `logger`, `findSourceDocuments`, `planComplexStage` and `notificationService` — the four members this body reads, unchanged by this node.
+         * `[ ]`   From `deps`: `dbClient`, `logger` and `getRecipeStep` — the three members this body reads.
 
-   * `[ ]`   `processComplexJob.interaction.spec`
-      * `[ ]`   Branch: a deferred-planning job carries a payload that is not a skeleton payload.
-         * `[ ]`   Condition: `payload.job.prerequisite_job_id` is set and the row's payload fails the skeleton check.
-         * `[ ]`   Decision: `!isDialecticSkeletonJobPayload(payload.job.payload)`.
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.interface.test.ts`
+      * `[ ]`   Prove `RequiredArtifactIdentity`, `ResolveNextBlockerDeps`, `ResolveNextBlockerParams` and `ResolveNextBlockerPayload` by their required-key surface records, each annotated with the exported symbol.
+      * `[ ]`   Prove `ResolveNextBlockerResult` by its required-key surface record.
+      * `[ ]`   Prove `ResolveNextBlockerFoundReturn` and `ResolveNextBlockerNoneReturn` as flavors of `ResolveNextBlockerSuccessReturn`, and `ResolveNextBlockerSuccessReturn` and `ResolveNextBlockerErrorReturn` as arms of `ResolveNextBlockerReturn`, by typed assignment.
+      * `[ ]`   Prove `ResolveNextBlockerFn`'s declared return in the async form: `ReturnType<ResolveNextBlockerFn>` admits `Promise<ResolveNextBlockerReturn>`.
+      * `[ ]`   Prove `GetRecipeStepFn` by a surface record over its own exported parameter surface; no block uses `Parameters<ResolveNextBlockerFn>[2]`, that slot being `unknown`.
+      * `[ ]`   Report the enumeration: every symbol `resolveNextBlocker.interface.ts` exports, and the block proving each, in both directions.
+
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.interface.ts`
+      * `[ ]`   Declare `RequiredArtifactIdentity` with `projectId`, `sessionId`, `stageSlug`, `iterationNumber`, `model_id` and `documentKey` required, `documentKey` typed `FileType`, and `branchKey`, `parallelGroup` and `sourceGroupFragment` nullable as they stand today.
+      * `[ ]`   Declare `GetRecipeStepFn` as `(stepId: string) => Promise<DialecticRecipeStepOrAbsent>`, and `DialecticRecipeStepOrAbsent` as `DialecticRecipeStep` or `null`.
+      * `[ ]`   Declare `ResolveNextBlockerDeps` with `dbClient`, `logger` and `getRecipeStep: GetRecipeStepFn`, every member required.
+      * `[ ]`   Declare `ResolveNextBlockerParams` with `projectId`, `sessionId`, `stageSlug`, `iterationNumber` and `model_id`.
+      * `[ ]`   Declare `ResolveNextBlockerPayload` with `requiredArtifactIdentity: RequiredArtifactIdentity`.
+      * `[ ]`   Declare `ResolveNextBlockerResult` with `id`, `job_type: JobType` and `status: DialecticJobRow['status']`.
+      * `[ ]`   Declare `ResolveNextBlockerFoundReturn` as `{ blocker: ResolveNextBlockerResult }`, `ResolveNextBlockerNoneReturn` as `{ noBlocker: true }`, `ResolveNextBlockerSuccessReturn` as their union, `ResolveNextBlockerErrorReturn` as `{ error: Error; retriable: boolean }`, and `ResolveNextBlockerReturn` as the two-arm union of success and error.
+      * `[ ]`   Declare `ResolveNextBlockerFn` as `(deps: ResolveNextBlockerDeps, params: ResolveNextBlockerParams, payload: unknown) => Promise<ResolveNextBlockerReturn>`.
+
+   * `[ ]`   `resolveNextBlocker.interaction.spec`
+      * `[ ]`   Branch: the payload is not a `ResolveNextBlockerPayload`.
+         * `[ ]`   Condition: the entry guard returns `false`, or its delegation to `isRequiredArtifactIdentity` rejects the identity.
+         * `[ ]`   Decision: `isResolveNextBlockerPayload(payload)`.
+         * `[ ]`   Dependency call: `deps.logger.debug` with the existing missing-fields message.
+         * `[ ]`   Outcome: `{ error, retriable: false }`. No query is issued.
+      * `[ ]`   Branch: the RENDER query fails.
+         * `[ ]`   Condition: the `dialectic_generation_jobs` select for `job_type: 'RENDER'` returns an error.
+         * `[ ]`   Decision: `renderError` truthy.
+         * `[ ]`   Dependency call: `deps.logger.error` with its existing message.
+         * `[ ]`   Outcome: `{ error: new Error("Failed to query RENDER jobs: <message>"), retriable: true }`, returned in place of the throw.
+      * `[ ]`   Branch: a RENDER row carries a payload that is not a render payload.
+         * `[ ]`   Condition: `isDialecticRenderJobPayload` throws its per-member diagnostic.
+         * `[ ]`   Decision: the `catch`; the guard never returns `false`, so its negated block is the narrowing device only.
          * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `{ error: new Error("[processComplexJob] Job <id> has an invalid payload for deferred planning."), retriable: false }`, returned in place of the throw. No row is written.
-      * `[ ]`   Branch: a first-pass job carries a payload that is not a plan payload.
-         * `[ ]`   Condition: `payload.job.prerequisite_job_id` is absent and the row's payload fails the plan check.
-         * `[ ]`   Decision: `!isDialecticPlanJobPayload(payload.job.payload)`.
+         * `[ ]`   Outcome: `{ error, retriable: false }` — a stored payload that does not match its own `job_type` column will not differ on a retry.
+      * `[ ]`   Branch: a RENDER row is out of scope for this search.
+         * `[ ]`   Condition: its status is `completed` or `failed`, or its proven payload's `projectId` is not `params.projectId`, or its `model_id` is not `params.model_id`, or it does not produce the required document key.
+         * `[ ]`   Decision: the status check, then the two equality checks against the proven payload, then `jobProducesDocumentKey`.
+         * `[ ]`   Dependency call: `deps.getRecipeStep` only on the PLAN arm of that predicate.
+         * `[ ]`   Outcome: continue to the next row; the loop falls through to the EXECUTE query when exhausted.
+      * `[ ]`   Branch: a RENDER row produces the required document key.
+         * `[ ]`   Condition: every check above passes and `job.job_type` is present.
+         * `[ ]`   Decision: `jobProducesDocumentKey` true.
+         * `[ ]`   Dependency call: `deps.logger.info` with its existing message.
+         * `[ ]`   Outcome: `{ blocker: { id, job_type, status } }`.
+      * `[ ]`   Branch: the EXECUTE query fails, a row is malformed, a row is out of scope, or a row matches.
+         * `[ ]`   Condition: the same four conditions against the `job_type: 'EXECUTE'` query and `isDialecticExecuteJobPayload`.
+         * `[ ]`   Decision: the same decisions in the same order.
+         * `[ ]`   Dependency call: `deps.logger.error` on failure, `deps.logger.info` on a match.
+         * `[ ]`   Outcome: `{ error: new Error("Failed to query EXECUTE jobs: <message>"), retriable: true }`; `{ error, retriable: false }`; continue; or `{ blocker: … }` respectively.
+      * `[ ]`   Branch: the PLAN query fails.
+         * `[ ]`   Condition: the `job_type: 'PLAN'` select returns an error.
+         * `[ ]`   Decision: `planError` truthy.
+         * `[ ]`   Dependency call: `deps.logger.error` with its existing message.
+         * `[ ]`   Outcome: `{ error: new Error("Failed to query PLAN jobs: <message>"), retriable: true }`.
+      * `[ ]`   Branch: a PLAN row is not a skeleton.
+         * `[ ]`   Condition: the row's payload fails the skeleton check.
+         * `[ ]`   Decision: `!isDialecticSkeletonJobPayload(job.payload)`, a non-throwing predicate selecting the skeleton arm inside the shared `PLAN` type.
          * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `{ error: new Error("[processComplexJob] Job <id> has an invalid payload for complex processing."), retriable: false }`, returned in place of the throw. No row is written.
-      * `[ ]`   Branch: neither the row nor its payload carries a stage slug.
-         * `[ ]`   Condition: `payload.job.stage_slug` and the payload's `stageSlug` are each absent or empty.
-         * `[ ]`   Decision: the existing two-way resolution falls through to its `else`.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `{ error: new Error("[processComplexJob] Job <id> is missing stageSlug."), retriable: false }`, returned in place of the throw. No row is written.
-      * `[ ]`   Branch: the stage row is missing or carries no active recipe instance.
-         * `[ ]`   Condition: the `dialectic_stages` select returns an error, no row, or a row whose `active_recipe_instance_id` is absent.
-         * `[ ]`   Decision: `stageError || !stageData || !stageData.active_recipe_instance_id`.
-         * `[ ]`   Dependency call: none; the `dialectic_generation_jobs` update that stood here is deleted.
-         * `[ ]`   Outcome: `{ error: new Error("Stage '<slug>' not found or has no active recipe."), retriable: false }`.
-      * `[ ]`   Branch: the recipe instance is missing.
-         * `[ ]`   Condition: the `dialectic_stage_recipe_instances` select returns an error or no row.
-         * `[ ]`   Decision: `instanceError || !instance`.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `{ error: new Error("Recipe instance not found for stage '<slug>' with instance ID '<id>'."), retriable: false }`.
-      * `[ ]`   Branch: a cloned instance has no steps, and the same for no valid steps.
-         * `[ ]`   Condition: the instance-steps select errors or returns an empty array; or every returned row fails `isDialecticStageRecipeStep`.
-         * `[ ]`   Decision: `stepErr || !stepRows || stepRows.length === 0`; then `validCount === 0`.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `{ error: new Error("Active recipe instance '<id>' has no recipe steps."), retriable: false }` and `{ error: new Error("Active recipe instance '<id>' has no valid recipe steps."), retriable: false }` respectively.
-      * `[ ]`   Branch: a template instance has no steps, and the same for no valid steps.
-         * `[ ]`   Condition: the template-steps select errors or returns an empty array; or every returned row fails `isDialecticRecipeTemplateStep`.
-         * `[ ]`   Decision: `stepErr || !stepRows || stepRows.length === 0`; then `validCount === 0`.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `{ error: new Error("Recipe template '<id>' has no recipe steps."), retriable: false }` and `{ error: new Error("Recipe template '<id>' has no valid recipe steps."), retriable: false }` respectively.
-      * `[ ]`   Branch: anything inside the planning `try` throws.
-         * `[ ]`   Condition: a throw reaches the outer `catch`.
-         * `[ ]`   Decision: `e instanceof ContextWindowError` selects the non-retriable classification; every other caught value is retriable.
-         * `[ ]`   Dependency call: `ctx.logger.error` always; `ctx.notificationService.sendJobNotificationEvent` with `type: 'job_failed'` only on the non-retriable classification, inside its existing best-effort `try`.
-         * `[ ]`   Outcome: `{ error: new Error(failureReason), retriable: false }` for a `ContextWindowError`, `{ error: new Error(failureReason), retriable: true }` otherwise. No row is written.
-      * `[ ]`   Branch: the planning pass completes.
-         * `[ ]`   Condition: the `try` runs to its end, having written whichever deferral or completion state its own path selected.
+         * `[ ]`   Outcome: continue. A first-pass plan job produces no artifact and is not a blocker.
+      * `[ ]`   Branch: a skeleton PLAN row produces the required document key.
+         * `[ ]`   Condition: its status, project and model checks pass and its recipe step's `output_type` matches.
+         * `[ ]`   Decision: `jobProducesDocumentKey`, which calls `deps.getRecipeStep` with the proven `planner_metadata.recipe_step_id`.
+         * `[ ]`   Dependency call: `deps.getRecipeStep`, then `deps.logger.info` with its existing message.
+         * `[ ]`   Outcome: `{ blocker: { id, job_type, status } }`.
+      * `[ ]`   Branch: all three tiers are exhausted.
+         * `[ ]`   Condition: no row in any tier matched.
          * `[ ]`   Decision: none.
-         * `[ ]`   Dependency call: the deferral or completion update already written on that path, unchanged.
-         * `[ ]`   Outcome: `{ planned: true }`.
-      * `[ ]`   Branch: a ready step is delegated to the planner.
-         * `[ ]`   Condition: a recipe step resolves as ready, on the first-pass path and on the deferred-planning path alike.
-         * `[ ]`   Decision: the existing readiness resolution, unchanged.
-         * `[ ]`   Dependency call: `ctx.planComplexStage(params.dbClient, payload.job, ctx, step, payload.job.payload.user_jwt)` on the deferred path and the same with `completedSourceDocIds` on the first-pass path — the JWT read from the row's own payload in place of the retired `authToken` parameter, at both call sites.
-         * `[ ]`   Outcome: the child jobs the planner returns, handled exactly as they are today.
-      * `[ ]`   Ordering and side effects: no `failed` write on any path; every deferral and completion write keeps its position and its values; at most one `job_failed` notification per invocation and none on a retriable failure; every path leaves the function by returning a member of the union, and nothing leaves it by throwing.
+         * `[ ]`   Dependency call: `deps.logger.debug` with its existing no-jobs-found message.
+         * `[ ]`   Outcome: `{ noBlocker: true }`.
+      * `[ ]`   Ordering and side effects: exactly one payload proof per invocation; the three queries are issued in RENDER, EXECUTE, PLAN order and a later tier is queried only when the earlier one is exhausted; at most one `deps.getRecipeStep` call per PLAN row inspected; no row is written on any path; every path leaves the function by returning a member of the union, and nothing leaves it by throwing.
 
-   * `[ ]`   `processComplexJob.errors.test.ts`
-      * `[ ]`   Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call, the four-field header being a claim about the body. Its `job` fixture is `buildDialecticJobRow` composed with `buildDialecticPlanJobPayload` or `buildDialecticSkeletonJobPayload`, never hand-rolled.
-      * `[ ]`   The four cases asserting a `failed` row write for a missing stage, a missing recipe instance, an instance with no recipe steps and a template with no recipe steps assert instead that the call returns the error arm carrying that case's exact message with `retriable: false`, and that no `dialectic_generation_jobs` update was issued.
-      * `[ ]`   The cases asserting a thrown invalid-payload message for the deferred and first-pass paths, and the case asserting the thrown missing-`stageSlug` message, assert the returned error arm carrying those same three messages with `retriable: false`, and that no row was written.
-      * `[ ]`   New case: an instance whose step rows all fail `isDialecticStageRecipeStep` returns the no-valid-steps error arm with `retriable: false`.
-      * `[ ]`   New case: a template whose step rows all fail `isDialecticRecipeTemplateStep` returns the no-valid-steps error arm with `retriable: false`.
-      * `[ ]`   New case: a throw inside the planning `try` that is not a `ContextWindowError` returns the error arm with `retriable: true` and writes no row, arranged beside the `ContextWindowError` case so the flag cannot be a constant.
-      * `[ ]`   New case: a `ContextWindowError` thrown inside the planning `try` returns the error arm with `retriable: false`.
-      * `[ ]`   Every remaining case keeps its arrangement and its assertions.
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.mock.ts`
+      * `[ ]`   The four symbols for each owned object type: `RequiredArtifactIdentity`, `ResolveNextBlockerDeps`, `ResolveNextBlockerParams`, `ResolveNextBlockerPayload`, `ResolveNextBlockerResult`, `ResolveNextBlockerFoundReturn`, `ResolveNextBlockerNoneReturn` and `ResolveNextBlockerErrorReturn`.
+      * `[ ]`   `buildResolveNextBlockerDeps` defaults `getRecipeStep` to this file's `mockGetRecipeStep` and `logger` to the shared logger mock, exactly as a nested object property defaults to its own builder.
+      * `[ ]`   `mockGetRecipeStep: GetRecipeStepFn` returning a built recipe step, and `mockResolveNextBlocker: ResolveNextBlockerFn` returning `buildResolveNextBlockerNoneReturn()` — identical signatures, no options bag, no recording.
+      * `[ ]`   `ResolveNextBlockerSuccessReturn` and `ResolveNextBlockerReturn` take no builder of their own; each member has one.
 
-   * `[ ]`   `processComplexJob.notifications.test.ts`
-      * `[ ]`   Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
-      * `[ ]`   The three `job_failed` cases keep their arrangements and assertions, each arranging a terminal failure, which is now the non-retriable classification, and each asserting the recipient is `payload.job.user_id`.
-      * `[ ]`   New case: a retriable planning failure sends no `job_failed` notification, arranged in the same file as a terminal case so the gate cannot be deleted without an assertion failing.
-      * `[ ]`   Every other case in the file is unchanged.
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.guard.test.ts`
+      * `[ ]`   Prove `isRequiredArtifactIdentity`, `isResolveNextBlockerDeps`, `isResolveNextBlockerParams`, `isResolveNextBlockerPayload`, `isResolveNextBlockerResult`, `isResolveNextBlockerFoundReturn`, `isResolveNextBlockerNoneReturn`, `isResolveNextBlockerSuccessReturn` and `isResolveNextBlockerErrorReturn` against the case checklist, fixtures drawn from this module's builders and invalidators.
+      * `[ ]`   A case per optional member of `RequiredArtifactIdentity` — `branchKey`, `parallelGroup`, `sourceGroupFragment` — absent is accepted, present but corrupted is rejected.
+      * `[ ]`   A case proves `isRequiredArtifactIdentity` rejects an empty-string `documentKey` and a non-`FileType` `documentKey`, those being the two states the caller's discarded default produced.
+      * `[ ]`   `isResolveNextBlockerDeps` asserts presence of `dbClient` and that `logger` and `getRecipeStep` are functions or objects carrying their methods, and nothing deeper.
+      * `[ ]`   Each return-flavor guard accepts its own flavor and rejects every other.
 
-   * `[ ]`   `processComplexJob.happy.test.ts`
-      * `[ ]`   Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
-      * `[ ]`   Each case that completes a planning pass adds an assertion on the returned `{ planned: true }` beside the deferral or completion write it already asserts.
-      * `[ ]`   New case: the JWT reaching `ctx.planComplexStage` is `payload.job.payload.user_jwt`, captured at the call site, so the retired parameter cannot return unnoticed.
-      * `[ ]`   Every existing arrangement and assertion — the recipe resolution, the child-job enqueue, the `waiting_for_children` write and its log line — is otherwise unchanged.
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.guard.ts`
+      * `[ ]`   Implement each guard this module owns. `isRequiredArtifactIdentity` checks presence and type of every required member, delegates `documentKey` to `isFileType` and `branchKey` to the guard `BranchKey`'s owner exports, and admits each optional member absent or null.
+      * `[ ]`   `isResolveNextBlockerPayload` delegates to `isRequiredArtifactIdentity` for its one member and inlines none of its checks.
 
-   * `[ ]`   `processComplexJob.parallel.test.ts`
-      * `[ ]`   Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
-      * `[ ]`   Each case adds an assertion on the returned `{ planned: true }`; every parallel-group arrangement, every child-count assertion and every `waiting_for_children` assertion is unchanged.
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.test.ts`
+      * `[ ]`   Every case calls `resolveNextBlocker(deps, params, payload)` and restates its `Act` line to that call; every fixture is drawn from this module's builders, the job rows from `buildDialecticJobRow` composed with the payload builder its `job_type` selects.
+      * `[ ]`   Each case that asserts a returned job object asserts `{ blocker: … }`, and each case that asserts `null` asserts `{ noBlocker: true }`.
+      * `[ ]`   Each case that asserts a thrown query failure asserts the returned error arm carrying that tier's exact message with `retriable: true`.
+      * `[ ]`   New case: a payload whose identity fails the guard returns the error arm with `retriable: false` and issues zero queries.
+      * `[ ]`   New case: a RENDER row whose payload is not a render payload returns the error arm with `retriable: false`, arranged beside a query-failure case so the two flags cannot be one constant.
+      * `[ ]`   New case: a PLAN row carrying a first-pass plan payload is skipped and the search continues, arranged in the same file as a skeleton PLAN match so the `continue` cannot be replaced by a return.
+      * `[ ]`   New case: a RENDER match and an EXECUTE match are both available and the RENDER job is returned, and the same for EXECUTE over PLAN, so the priority order cannot collapse.
+      * `[ ]`   New case: a row whose proven payload carries a different `projectId`, and one carrying a different `model_id`, are each skipped while a matching row in the same arrangement is returned.
+      * `[ ]`   New case: `deps.getRecipeStep` is called with the skeleton's `planner_metadata.recipe_step_id`, captured at the call site.
+      * `[ ]`   Every existing case keeps its coverage and its assertions.
 
-   * `[ ]`   `processComplexJob.intraStageDependency.test.ts`
-      * `[ ]`   Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
-      * `[ ]`   Each case adds an assertion on the returned `{ planned: true }`; every `waiting_for_prerequisite` arrangement, every skeleton-construction assertion and every idempotent-replay assertion is unchanged.
-      * `[ ]`   Its `createMockJobProcessors` usage is unchanged; the harness compiles against the reshaped `IJobProcessors` as of the `createJobContext` node.
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.ts`
+      * `[ ]`   The function is declared as annotated above; the two-parameter list is replaced by the three inferred slots, and `ResolveNextBlockerFn` and every type this file reads are imported from `./resolveNextBlocker.interface.ts`.
+      * `[ ]`   The body opens a `try` whose first statement is `isResolveNextBlockerPayload(payload)`, its `false` branch logging the existing missing-fields debug line and returning the error arm; the `catch` returns the error arm with `retriable: false`.
+      * `[ ]`   The two early-return blocks validating `requiredArtifactIdentity` are deleted; the entry guard proves every member they checked.
+      * `[ ]`   `deps.getRecipeStep` is destructured as a required member and the `if (!getRecipeStep) return false` branch inside `jobProducesDocumentKey` is deleted; the helper's third parameter becomes required and typed `GetRecipeStepFn`.
+      * `[ ]`   Each of the three `throw new Error(\`Failed to query … jobs: …\`)` statements becomes a `return` of the error arm carrying that same message with `retriable: true`; the `deps.logger.error` call above each stays.
+      * `[ ]`   Each loop proves the row's payload once by the guard its tier selects, then reads `projectId` and `model_id` off the proven payload for the two equality filters; `extractModelIdFromPayload` is deleted, and with it the `isRecord` import and every call to it in this file.
+      * `[ ]`   The `return false` after each throwing arm guard inside `jobProducesDocumentKey` stays as the compiler's narrowing device and is the only statement in its block.
+      * `[ ]`   Each `return { id, job_type, status }` becomes `return { blocker: { id, job_type, status } }`, and the final `return null` becomes `return { noBlocker: true }`.
+      * `[ ]`   `jobProducesDocumentKey` keeps its three arms, its `output_type` preference, its `canonicalPathParams.contributionType` fallback and its boolean return; the `isRecord(job.payload)` gate at its top is deleted, its callers having proven the payload.
+      * `[ ]`   Nothing else changes: the three queries, their filters, the in-progress status array, the defensive status skip, the priority order and every log line stand exactly as they are.
 
-   * `[ ]`   `processComplexJob.ts`
-      * `[ ]`   The function is declared `export const processComplexJob: ProcessComplexJobFn = async (ctx, params, payload) => { … }`; the five-parameter list and its inline types are deleted. `ProcessComplexJobFn` and `ProcessComplexJobReturn` are imported from `dialectic-service/dialectic.interface.ts` beside the imports already taken from that file.
-      * `[ ]`   `params.dbClient` is destructured once at the top and replaces every `dbClient` reference; `payload.job` replaces every `job` reference, `parentJobId` still destructured from it; `payload.job.user_id` replaces `projectOwnerUserId` at the `job_failed` notification; and `payload.job.payload.user_jwt` replaces `authToken` at both `ctx.planComplexStage` call sites.
-      * `[ ]`   The `job` parameter's inline union `DialecticJobRow & { payload: DialecticPlanJobPayload | DialecticSkeletonJobPayload }` leaves with that parameter list. `DialecticSkeletonJobPayload` extends `DialecticPlanJobPayload`, so `ProcessComplexJobPayload` admits every value the union did, and the body's `isDialecticSkeletonJobPayload` check narrows to the skeleton arm exactly as it does now.
-      * `[ ]`   The `DialecticSkeletonJobPayload` type import stays — the body's guard call still needs it. The `SupabaseClient` and `Database` imports stay, `params.dbClient` carrying that type.
-      * `[ ]`   The two payload-guard throws and the `stageSlug` throw each become a `return` of the error arm carrying an `Error` built from that throw's existing message string, with `retriable: false`.
-      * `[ ]`   Each of the six `dbClient.from('dialectic_generation_jobs').update({ status: 'failed', … })` calls and its following bare `return` is replaced by a `return` of the error arm carrying an `Error` built from that call's existing message string, with `retriable: false`.
-      * `[ ]`   The outer `catch` keeps its `error` derivation, its `ctx.logger.error` call and its `failureReason` construction; the `failed` row update is deleted; the `job_failed` notification is wrapped in the non-retriable condition; and the `catch` ends by returning the error arm with `failureReason` as the message and the classified flag.
-      * `[ ]`   The end of the `try`, after the `waiting_for_children` update and its log line, returns `{ planned: true }`, as does every earlier path that completes a planning pass.
-      * `[ ]`   Nothing else in the file changes: every query, every deferral and completion update, the recipe resolution, the child-job tracking, the planner delegation, the skeleton construction, the idempotent-replay handling and every log line stand exactly as they are.
+   * `[ ]`   resolveNextBlocker/`resolveNextBlocker.provides.ts`
+      * `[ ]`   Re-export `resolveNextBlocker.ts`, `resolveNextBlocker.interface.ts`, `resolveNextBlocker.guard.ts` and `resolveNextBlocker.mock.ts`.
+
+   * `[ ]`   supabase/functions/dialectic-service/`dialectic.interface.ts`
+      * `[ ]`   Delete `RequiredArtifactIdentity`, `ResolveNextBlockerDeps`, `ResolveNextBlockerParams` and `ResolveNextBlockerResult`, and the imports they required.
 
    * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this file reads the plan-job context it was handed and imports its own contract from the service-layer interface that declares it; it exports the implementation outward to `processJob.ts` and the worker root, and nothing back.
-      * `[ ]`   No cycle: `planComplexStage`, `resolveNextBlocker` and `createJobContext` import nothing from this file.
-      * `[ ]`   The graph gains and loses no edge: the two values this node stops taking as parameters are read from a row this function already holds.
+      * `[ ]`   Deps face inward: this module imports row, recipe-step and file-type declarations from the service-layer interface and three payload guards from the shared guard package, and receives its client, logger and recipe-step resolver by injection. It exports its own surface outward through `resolveNextBlocker.provides.ts`.
+      * `[ ]`   No cycle: `dialectic-service/dialectic.interface.ts`, the guard package and `createJobContext` import nothing from this module.
+      * `[ ]`   `processComplexJob/processComplexJob.ts` and `processComplexJob/processComplexJob.intraStageDependency.test.ts` go transiently non-compilable at this node and are not edited here; both are support files of the `processComplexJob` node, which takes the new import path, the three-slot call, and the identity value passed through in place of the ternary construction it stops performing.
 
    * `[ ]`   `requirements`
-      * `[ ]`   The implementation is annotated `ProcessComplexJobFn`, takes three arguments and declares no parameter types of its own, so no annotation site in the file composes a union — proven by the compiler: a divergence between the declared contract and the implementation is a type error rather than a silent difference.
-      * `[ ]`   `ctx.planComplexStage` receives `payload.job.payload.user_jwt` at both call sites, and the `job_failed` notification is addressed to `payload.job.user_id` — unit test, captured-argument assertions.
-      * `[ ]`   Each of the six configuration failures returns the error arm with its existing message and `retriable: false`, and issues no `dialectic_generation_jobs` update — unit test.
-      * `[ ]`   The two invalid-payload failures and the missing-`stageSlug` failure each return the error arm with their existing message and `retriable: false`, and nothing leaves the function by throwing — unit test, returned-value assertions where a thrown error was asserted before.
-      * `[ ]`   A non-`ContextWindowError` throw inside the planning `try` returns `retriable: true`, and a `ContextWindowError` returns `retriable: false` — unit test, both arranged in one file.
-      * `[ ]`   No path writes `status: 'failed'` — unit test, update-argument assertions across all five suites.
-      * `[ ]`   A retriable failure sends no `job_failed` notification and a non-retriable failure sends exactly one — unit test.
-      * `[ ]`   Every `waiting_for_children`, `waiting_for_prerequisite` and `completed` write happens on the same condition and with the same values it does now — unit test, existing cases unchanged.
-      * `[ ]`   A completed planning pass returns `{ planned: true }` — unit test, in each of the five suites that drive one.
-      * `[ ]`   Every skeleton-payload path behaves exactly as it does now under the declared payload type — unit test, existing deferred-planning cases unchanged.
+      * `[ ]`   `ResolveNextBlockerFn` declares `payload: unknown`, and the implementation is annotated with it and declares no parameter types of its own — proven by the compiler.
+      * `[ ]`   No value in the implementation is annotated with a union composed at its annotation site, and no `isRecord` call remains — proven by the compiler.
+      * `[ ]`   Every symbol `resolveNextBlocker.interface.ts` exports is both imported and consumed by a proof block — interface test, bidirectional enumeration.
+      * `[ ]`   Every type this module owns, less the two top-level unions, has a guard with no false positives and no false negatives — guard test, the case checklist per guard.
+      * `[ ]`   `isRequiredArtifactIdentity` rejects an empty and a non-`FileType` `documentKey` — guard test.
+      * `[ ]`   No path throws; every path returns a member of `ResolveNextBlockerReturn` — unit test, one case per branch of the interaction spec.
+      * `[ ]`   A query failure returns `retriable: true` and a malformed stored payload returns `retriable: false` — unit test, both arranged in one file.
+      * `[ ]`   The RENDER, EXECUTE, PLAN priority holds when more than one tier has a match — unit test.
+      * `[ ]`   A first-pass PLAN row is skipped rather than returned or reported as a failure — unit test.
+      * `[ ]`   `deps.getRecipeStep` receives the skeleton's own `recipe_step_id` — unit test, captured-argument assertion.
+      * `[ ]`   No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
+
+*   `[ ]` supabase/functions/dialectic-worker/processComplexJob/processComplexJob.ts **[BE] Canonize the PLAN processor as a module owning its whole contract: prove one payload type at entry that admits both shapes, select the deferred arm on the row column, report the planning outcome on a two-arm return, and stop writing `failed` on any path**
+
+    *   `[ ]` `objective`
+        *   `[ ]` Solve an entry that cannot be guarded as written. The function declares `job: DialecticJobRow & { payload: DialecticPlanJobPayload | DialecticSkeletonJobPayload }` — a union composed at a parameter annotation — then branches on `prerequisite_job_id` and throws from either guard. A canonical entry takes `payload: unknown` and proves one type, and the implementer has no way to reach one type from a two-member union without a cast.
+        *   `[ ]` Solve the reason that entry looks impossible. `DialecticSkeletonJobPayload` extends `DialecticPlanJobPayload`, and the skeleton builder in this same file constructs one by copying every plan member off a value it proved with `isDialecticPlanJobPayload` and adding `planner_metadata` and `step_info`. A skeleton *is* a plan payload. `ProcessComplexJobPayload` already declares `job: DialecticJobRow & { payload: DialecticPlanJobPayload }`, which therefore admits both shapes with no union, no second type and no cast — once `isDialecticPlanJobPayload` stops rejecting its own subtype. The two shapes were never two payload types; they are one type and two arms, and the arm is selected by `prerequisite_job_id`, a row column, exactly as the body already does.
+        *   `[ ]` Solve a planner that decides its own job is dead and tells the runner nothing. Six configuration checks and the outer `catch` each write `status: 'failed'` with a `completed_at` and an `error_details.message`, and the function returns `void`, so the runner that claimed the job learns nothing and `max_retries` never applies to a PLAN job. Three further failures leave by throwing. The function takes five positional parameters, two of which duplicate values the job row already holds.
+        *   `[ ]` Solve a processor that owns no contract: six types sit in a service-layer interface, four guards in a shared guard file, seventeen mock symbols in a shared mock file, and its contract proofs in another module's interface test, so no consumer can build or test against it from one import point.
+        *   `[ ]` Solve values typed `unknown` to avoid finding their real type — `stageSlugFromRow`, `stageSlugFromPayload`, `iterationNumberFromRow`, `iterationNumberFromPayload` — each annotated `unknown` where the row column and the payload member each have a declared type.
+        *   `[ ]` Solve a skeleton that mints one step marker where four are in hand. `skeletonPlannerMetadata` carries `recipe_step_id` alone, while `step.step_slug`, `instance.template_id` and `stageSlug` are all in scope at that construction site — `step.step_slug` read four lines later in the log line, `instance.template_id` read in the template-steps query and its two error messages, `stageSlug` assigned onto the skeleton payload itself. The planner carries this metadata forward onto every child EXECUTE payload, and `processSimpleJob`'s recipe-step resolution reads `recipe_step_id`, `recipe_template_id` and a step slug off it; two of the three markers that resolution depends on are never written, so its fallback path can never fire.
+        *   `[ ]` Functional goals:
+            *   `[ ]` The module owns its interface, interface test, mock, guard, guard test and provides beside the implementation and the five suites already in the folder. Consumers reach every symbol through `processComplexJob.provides.ts`.
+            *   `[ ]` `ProcessComplexJobFn` declares `payload: unknown`, and `processComplexJob` is declared `export const processComplexJob: ProcessComplexJobFn = async (ctx, params, payload) => { … }`, parameter types inferred from that annotation, returning `Promise<ProcessComplexJobReturn>`.
+            *   `[ ]` `isProcessComplexJobPayload(payload)` is the first statement of the function's `try`. Its `false` return produces the error arm; its delegated throw reaches the `catch`. It is the only payload proof at entry, and the parameter union is deleted with the parameter list.
+            *   `[ ]` The deferred arm is selected on `payload.job.prerequisite_job_id` and narrowed by `isDialecticSkeletonJobPayload(payload.job.payload)`, which stays a call inside the body and is never the entry guard. `isDialecticPlanJobPayload` is not called in this file after this node; the entry guard delegates to it.
+            *   `[ ]` `params.dbClient` replaces the `dbClient` parameter; `payload.job` replaces the `job` parameter; `payload.job.user_id` replaces `projectOwnerUserId` at the `job_failed` notification; `payload.job.payload.user_jwt` replaces `authToken` at both `ctx.planComplexStage` call sites.
+            *   `[ ]` `stageSlug` is resolved from `payload.job.stage_slug` and `payload.job.payload.stageSlug`, each read at its declared type, with the `unknown` annotations and the `isRecord` ternary deleted; the fall-through returns the error arm.
+            *   `[ ]` `iterationNumber` in the skeleton builder is resolved the same way from `payload.job.iteration_number` and the proven parent payload's `iterationNumber`, with both `unknown` annotations deleted.
+            *   `[ ]` Each of the six configuration failures returns the error arm carrying an `Error` built from the message it writes today, with `retriable: false`.
+            *   `[ ]` The two payload-guard failures and the missing-`stageSlug` failure return the error arm carrying an `Error` built from the message each throws today, with `retriable: false`, in place of throwing.
+            *   `[ ]` The outer `catch` returns the error arm carrying the `Error` it already derives, with `retriable: false` for a `ContextWindowError` and `retriable: true` otherwise.
+            *   `[ ]` No path writes `status: 'failed'`, a `completed_at` alongside it, or an `error_details` failure message, and no path leaves the function by throwing.
+            *   `[ ]` Every path that completes its planning pass returns `{ planned: true }`.
+        *   `[ ]` Non-functional constraints:
+            *   `[ ]` Every deferral and completion write this function owns is unchanged in condition, column set and value: `waiting_for_children` on the four paths that set it, `waiting_for_prerequisite` on the two that re-chain a skeleton, and `completed` on the three that finish a parent or a childless skeleton. Those are a planner's own outcomes, not a failure verdict.
+            *   `[ ]` The `failureReason` construction in the `catch` is unchanged; its result becomes the message of the returned `Error` instead of an `error_details` column value.
+            *   `[ ]` The `job_failed` notification is sent only on the non-retriable classification, so a job the runner will retry is never told it failed. Its payload, `step_key`, `errCode` selection and best-effort wrapper are otherwise unchanged.
+            *   `[ ]` The two guard import paths this file uses — `_shared/utils/type_guards.ts` for `isDialecticPlanJobPayload`, `isRecord` and `isJson`, and `_shared/utils/type-guards/type_guards.dialectic.ts` for `isDialecticSkeletonJobPayload` — collapse to the single path the entry guard and the skeleton guard are exported from.
+            *   `[ ]` Every log line, every query, the recipe resolution, the child-job tracking, the planner delegation and the idempotent-replay handling are unchanged.
+            *   `[ ]` The skeleton payload's `planner_metadata` carries `recipe_step_id`, `recipe_template_id`, `stage_slug` and `step_slug`. `recipe_template_id` and `stage_slug` are declared members of `DialecticStepPlannerMetadata`; `step_slug` rides the index signature that type declares, which `isPlannerMetadata` admits for any string-valued key. Every other member of the skeleton payload, and every column of the skeleton job row, is unchanged.
+            *   `[ ]` Every moved symbol keeps its production name. This node relocates and corrects; it renames nothing.
+        *   `[ ]` Each goal is proven by a named case in this module's interface, guard or behavioral suites.
+
+    *   `[ ]` `role`
+        *   `[ ]` App-layer planning: prove the payload, read a stage's recipe, decide which steps are ready, enqueue their child jobs, record the waiting or completed state the parent now occupies, and report the pass as a return value.
+        *   `[ ]` Deferral and completion are the planner's own outcomes — it is the only party that knows a parent is waiting on children or has none left. Failure is not in that set: whether a failed job is retried is a queue policy applied to a row, and the runner holds the row.
+        *   `[ ]` Out-of-scope responsibilities:
+            *   `[ ]` Do not write `status: 'failed'`, `retrying` or `retry_loop_failed` on any path.
+            *   `[ ]` Do not read `max_retries` or `attempt_count`, and do not call `retryJob`.
+            *   `[ ]` Do not change any deferral or completion write, or the conditions that select them.
+            *   `[ ]` Do not declare `IJobProcessors`; it belongs to the `processJob` module and imports this module's `ProcessComplexJobFn` from its provides.
+            *   `[ ]` Do not declare `IPlanJobContext`; it belongs to `createJobContext` and is imported from there as this function's deps slot.
+            *   `[ ]` Do not change `isDialecticSkeletonJobPayload`; it remains the sole selector of the skeleton arm and this node leaves it exactly as it stands.
+            *   `[ ]` Do not write a guard for `RequiredArtifactIdentity`; that type's owner is named in `deps` below.
+            *   `[ ]` Do not edit `processJob`, `dialectic-worker/index.ts`, `planComplexStage` or `resolveNextBlocker`; each has its own node.
+            *   `[ ]` Do not decompose the implementation body or extract from it.
+
+    *   `[ ]` `module`
+        *   `[ ]` Bounded context is `dialectic-worker/processComplexJob/` — one PLAN or skeleton job's pass from payload proof through recipe resolution and child enqueue to the parent's waiting or completed state, the outcome it reports, and the contract that outcome satisfies.
+        *   `[ ]` Inside boundary: this processor's function type, params, payload, return arms, and every guard and mock for them; which recipe steps are ready; what child jobs they produce; which waiting or completed state the parent lands in; whether a planning failure could succeed later.
+        *   `[ ]` Outside boundary: whether a retriable failure is retried and what a job's terminal state is, both the runner's; the granularity planner and child-payload construction, `planComplexStage`'s; `IPlanJobContext`, `createJobContext`'s; `IJobProcessors`, `processJob`'s; `RequiredArtifactIdentity`, its receiver's.
+
+    *   `[ ]` `deps`
+        *   `[ ]` Provider: `../createJobContext/JobContext.interface.ts` (`IPlanJobContext`). Worker-layer context contract, inbound, this function's deps slot, already taken by this file. `createJobContext` imports nothing from this module, so the edge is one-way and no cycle is opened.
+        *   `[ ]` Provider: `dialectic-service/dialectic.interface.ts` — `DialecticJobRow`, `DialecticPlanJobPayload`, `DialecticSkeletonJobPayload`, `BranchKey`, and the three recipe types. Service-layer types this module's contract composes; that file imports nothing from this module after this node.
+        *   `[ ]` Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` — `isDialecticPlanJobPayload`, which this module's payload guard delegates to, and `isDialecticSkeletonJobPayload`, which the body calls to narrow the deferred arm. Shared guard package, inbound, single import path replacing the two this file uses today.
+        *   `[ ]` Provider: `./resolveNextBlocker.ts`, unchanged.
+        *   `[ ]` Removed provider: none. `projectOwnerUserId` and `authToken` were positional values, not collaborators; each is read from the job row after this node.
+        *   `[ ]` Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticPlanJobPayload`), which `isProcessComplexJobPayload` delegates to and which this node corrects in its own elements below.
+            *   `[ ]` Layer classification: shared guard package, owner of the plan payload.
+            *   `[ ]` Direction: inbound; already imported by this file.
+            *   `[ ]` Purpose: prove the one payload type this module's entry guard admits, skeleton arm included.
+        *   `[ ]` Confirm:
+            *   `[ ]` `IPlanJobContext` is unchanged in shape: no member is added, removed or retyped.
+            *   `[ ]` No reverse dependency: `planComplexStage`, `resolveNextBlocker`, `createJobContext` and `dialectic-service/dialectic.interface.ts` import nothing from this module, save the one `IJobProcessors` import named in `directionality`.
+            *   `[ ]` The plan-guard correction's only non-test branch consumer outside this module is `task_isolator.ts`, whose `else if` classifies a planner-returned child payload as `jobType = 'PLAN'`. Admitting a skeleton shape there classifies it correctly — this file inserts skeletons with `job_type: 'PLAN'` — where today it falls through to the schema-mismatch throw. No edit is required there and none is made.
+        *   `[ ]` `context_slice`
+            *   `[ ]` From `ctx`: `logger`, `findSourceDocuments`, `planComplexStage` and `notificationService` — the four members this body reads, unchanged by this node.
+
+    *   `[ ]` processComplexJob/`processComplexJob.interface.test.ts`
+        *   `[ ]` Prove `ProcessComplexJobParams` and `ProcessComplexJobPayload` by their required-key surface records, each annotated with the exported symbol.
+        *   `[ ]` Prove `ProcessComplexJobSuccessReturn` and `ProcessComplexJobErrorReturn` as arms of `ProcessComplexJobReturn` by typed assignment.
+        *   `[ ]` Prove `ProcessComplexJobFn`'s declared return in the async form: `ReturnType<ProcessComplexJobFn>` admits `Promise<ProcessComplexJobReturn>`.
+        *   `[ ]` A block proves by typed assignment that a `DialecticSkeletonJobPayload` is assignable to the `payload` position of `ProcessComplexJobPayload`'s `job` member, so the one payload type's admission of both arms is a compile-checked fact rather than a comment.
+        *   `[ ]` No block proves a payload contract through `Parameters<ProcessComplexJobFn>[2]`; that slot is `unknown` and admits everything.
+        *   `[ ]` Report the enumeration: every symbol `processComplexJob.interface.ts` exports, and the block proving each, in both directions.
+
+    *   `[ ]` processComplexJob/`processComplexJob.interface.ts`
+        *   `[ ]` Declare `ProcessComplexJobParams` with `dbClient`, `ProcessComplexJobPayload` with `job: DialecticJobRow & { payload: DialecticPlanJobPayload }`, and `ProcessComplexJobSuccessReturn`, `ProcessComplexJobErrorReturn` and `ProcessComplexJobReturn` in the shapes they carry today.
+        *   `[ ]` Declare `ProcessComplexJobFn` as `(deps: IPlanJobContext, params: ProcessComplexJobParams, payload: unknown) => Promise<ProcessComplexJobReturn>`.
+        *   `[ ]` `ProcessComplexJobPayload` declares one payload type, not a union. The deferred arm is a subtype admitted by it, selected on the row column and narrowed in the body.
+
+    *   `[ ]` `processComplexJob.interaction.spec`
+        *   `[ ]` Branch: the payload is not a `ProcessComplexJobPayload`.
+            *   `[ ]` Condition: the entry guard returns `false`, or its delegation throws.
+            *   `[ ]` Decision: `isProcessComplexJobPayload(payload)`, with the `catch` handling the delegated throw.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error, retriable: false }`. No row is written, no notification is sent.
+        *   `[ ]` Branch: a deferred-planning job carries a payload that is not a skeleton payload.
+            *   `[ ]` Condition: `payload.job.prerequisite_job_id` is set and the row's payload fails the skeleton check.
+            *   `[ ]` Decision: `!isDialecticSkeletonJobPayload(payload.job.payload)`, inside the body, after the entry guard has already proven the plan shape.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error: new Error("[processComplexJob] Job <id> has an invalid payload for deferred planning."), retriable: false }`, returned in place of the throw. No row is written.
+        *   `[ ]` Branch: neither the row nor its payload carries a stage slug.
+            *   `[ ]` Condition: `payload.job.stage_slug` and `payload.job.payload.stageSlug` are each absent or empty, each read at its declared type.
+            *   `[ ]` Decision: the existing two-way resolution falls through to its `else`.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error: new Error("[processComplexJob] Job <id> is missing stageSlug."), retriable: false }`.
+        *   `[ ]` Branch: the stage row is missing or carries no active recipe instance.
+            *   `[ ]` Condition: the `dialectic_stages` select returns an error, no row, or a row whose `active_recipe_instance_id` is absent.
+            *   `[ ]` Decision: `stageError || !stageData || !stageData.active_recipe_instance_id`.
+            *   `[ ]` Dependency call: none; the `dialectic_generation_jobs` update that stood here is deleted.
+            *   `[ ]` Outcome: `{ error: new Error("Stage '<slug>' not found or has no active recipe."), retriable: false }`.
+        *   `[ ]` Branch: the recipe instance is missing.
+            *   `[ ]` Condition: the `dialectic_stage_recipe_instances` select returns an error or no row.
+            *   `[ ]` Decision: `instanceError || !instance`.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error: new Error("Recipe instance not found for stage '<slug>' with instance ID '<id>'."), retriable: false }`.
+        *   `[ ]` Branch: a cloned instance has no steps, and the same for no valid steps.
+            *   `[ ]` Condition: the instance-steps select errors or returns an empty array; or every returned row fails `isDialecticStageRecipeStep`.
+            *   `[ ]` Decision: `stepErr || !stepRows || stepRows.length === 0`; then `validCount === 0`.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error: new Error("Active recipe instance '<id>' has no recipe steps."), retriable: false }` and `{ error: new Error("Active recipe instance '<id>' has no valid recipe steps."), retriable: false }` respectively.
+        *   `[ ]` Branch: a template instance has no steps, and the same for no valid steps.
+            *   `[ ]` Condition: the template-steps select errors or returns an empty array; or every returned row fails `isDialecticRecipeTemplateStep`.
+            *   `[ ]` Decision: `stepErr || !stepRows || stepRows.length === 0`; then `validCount === 0`.
+            *   `[ ]` Dependency call: none.
+            *   `[ ]` Outcome: `{ error: new Error("Recipe template '<id>' has no recipe steps."), retriable: false }` and `{ error: new Error("Recipe template '<id>' has no valid recipe steps."), retriable: false }` respectively.
+        *   `[ ]` Branch: a ready step is delegated to the planner.
+            *   `[ ]` Condition: a recipe step resolves as ready, on the first-pass path and the deferred path alike.
+            *   `[ ]` Decision: the existing readiness resolution, unchanged.
+            *   `[ ]` Dependency call: `ctx.planComplexStage(params.dbClient, payload.job, ctx, step, payload.job.payload.user_jwt)` on the deferred path and the same with `completedSourceDocIds` on the first-pass path.
+            *   `[ ]` Outcome: the child jobs the planner returns, handled exactly as they are today.
+        *   `[ ]` Branch: anything inside the planning `try` throws.
+            *   `[ ]` Condition: a throw reaches the outer `catch`.
+            *   `[ ]` Decision: `e instanceof ContextWindowError` selects the non-retriable classification; every other caught value is retriable.
+            *   `[ ]` Dependency call: `ctx.logger.error` always; `ctx.notificationService.sendJobNotificationEvent` with `type: 'job_failed'` only on the non-retriable classification, inside its existing best-effort wrapper.
+            *   `[ ]` Outcome: `{ error: new Error(failureReason), retriable: false }` for a `ContextWindowError`, `{ error: new Error(failureReason), retriable: true }` otherwise. No row is written.
+        *   `[ ]` Branch: the planning pass completes.
+            *   `[ ]` Condition: the `try` runs to its end, having written whichever deferral or completion state its own path selected.
+            *   `[ ]` Decision: none.
+            *   `[ ]` Dependency call: the deferral or completion update already written on that path, unchanged.
+            *   `[ ]` Outcome: `{ planned: true }`.
+        *   `[ ]` Ordering and side effects: exactly one payload proof per invocation; no `failed` write on any path; every deferral and completion write keeps its position and its values; at most one `job_failed` notification per invocation and none on a retriable failure; every path leaves the function by returning a member of the union, and nothing leaves it by throwing.
+
+    *   `[ ]` processComplexJob/`processComplexJob.mock.ts`
+        *   `[ ]` The four symbols for each owned object type: `ProcessComplexJobParams`, `ProcessComplexJobPayload`, `ProcessComplexJobSuccessReturn` and `ProcessComplexJobErrorReturn`.
+        *   `[ ]` `buildProcessComplexJobPayload` composes `buildDialecticJobRow` with `buildDialecticPlanJobPayload`; a second builder is not added for the skeleton arm, which is reached by overriding the payload with `buildDialecticSkeletonJobPayload` from its home package.
+        *   `[ ]` `mockProcessComplexJob: ProcessComplexJobFn`, returning `buildProcessComplexJobSuccessReturn()`, identical signature, no options bag, no recording.
+        *   `[ ]` `ProcessComplexJobReturn` takes no builder of its own; each arm has one.
+
+    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.test.ts`
+        *   `[ ]` The two cases asserting that a plan payload carrying `planner_metadata` is rejected, and that one carrying `step_info` is rejected, assert instead that each is accepted. `DialecticSkeletonJobPayload` extends `DialecticPlanJobPayload`, so a guard that proves the plan type admits its own subtype; the two standing cases assert the opposite and are the defect written as a requirement.
+        *   `[ ]` New case: `isDialecticPlanJobPayload` accepts `buildDialecticSkeletonJobPayload()` whole, arranged beside the plain plan-payload case in the same file, so a rejection cannot return through either the member check or the allowed-key set.
+        *   `[ ]` New case: `isDialecticPlanJobPayload` rejects a payload carrying a key that is neither a base member, a plan member, `planner_metadata` nor `step_info`, so widening the allowed-key set does not become an open door.
+        *   `[ ]` Every existing case for this guard, and every case for every other guard in the file, keeps its arrangement and its assertions.
+
+    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.ts`
+        *   `[ ]` Delete the `if ('planner_metadata' in payload) return false;` rejection from `isDialecticPlanJobPayload`, and add `planner_metadata` and `step_info` to its `allowedKeys` set. Both are required: either alone still refuses a skeleton, the first through the member check and the second through the extraneous-key check.
+        *   `[ ]` `isDialecticPlanJobPayload` proves `DialecticPlanJobPayload` and discriminates nothing after this element. `isDialecticSkeletonJobPayload` remains the sole selector of the skeleton arm and is unchanged.
+        *   `[ ]` Every other guard in the file is unchanged.
+
+    *   `[ ]` processComplexJob/`processComplexJob.guard.test.ts`
+        *   `[ ]` Prove `isProcessComplexJobParams`, `isProcessComplexJobPayload`, `isProcessComplexJobSuccessReturn` and `isProcessComplexJobErrorReturn` against the case checklist, fixtures drawn from this module's builders and invalidators.
+        *   `[ ]` A case proves `isProcessComplexJobPayload` accepts a row whose payload is a `DialecticSkeletonJobPayload`, arranged beside the plan-payload case in the same file, so the subtype admission cannot regress unnoticed.
+        *   `[ ]` A case proves `isProcessComplexJobPayload` rejects a row carrying an execute payload, surfacing the arm guard's own reason.
+        *   `[ ]` Each return-arm guard accepts its own arm and rejects the other.
+
+    *   `[ ]` processComplexJob/`processComplexJob.guard.ts`
+        *   `[ ]` Implement the four guards this module now owns in the bodies they carry today, calling `isDialecticJobRow` and `isDialecticPlanJobPayload` from the shared guard package for the imported types they delegate to.
+
+    *   `[ ]` processComplexJob/`processComplexJob.errors.test.ts`
+        *   `[ ]` Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call. Its `job` fixture is `buildProcessComplexJobPayload`, overridden with `buildDialecticSkeletonJobPayload` where the case exercises the deferred arm, never hand-rolled.
+        *   `[ ]` The four cases asserting a `failed` row write for a missing stage, a missing recipe instance, an instance with no recipe steps and a template with no recipe steps assert instead the returned error arm carrying that case's exact message with `retriable: false`, and that no `dialectic_generation_jobs` update was issued.
+        *   `[ ]` The cases asserting a thrown invalid-payload message for the deferred and first-pass paths, and the case asserting the thrown missing-`stageSlug` message, assert the returned error arm carrying those same three messages with `retriable: false`, and that no row was written.
+        *   `[ ]` New case: a payload that is not a `ProcessComplexJobPayload` returns the error arm with `retriable: false`, writes no row and sends no notification.
+        *   `[ ]` New case: an instance whose step rows all fail `isDialecticStageRecipeStep` returns the no-valid-steps error arm with `retriable: false`.
+        *   `[ ]` New case: a template whose step rows all fail `isDialecticRecipeTemplateStep` returns the no-valid-steps error arm with `retriable: false`.
+        *   `[ ]` New case: a throw inside the planning `try` that is not a `ContextWindowError` returns the error arm with `retriable: true` and writes no row, arranged beside the `ContextWindowError` case so the flag cannot be a constant.
+        *   `[ ]` New case: a `ContextWindowError` thrown inside the planning `try` returns the error arm with `retriable: false`.
+        *   `[ ]` Every remaining case keeps its arrangement and its assertions.
+
+    *   `[ ]` processComplexJob/`processComplexJob.notifications.test.ts`
+        *   `[ ]` Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
+        *   `[ ]` The three `job_failed` cases keep their arrangements and assertions, each arranging a terminal failure — now the non-retriable classification — and each asserting the recipient is `payload.job.user_id`.
+        *   `[ ]` New case: a retriable planning failure sends no `job_failed` notification, arranged in the same file as a terminal case so the gate cannot be deleted without an assertion failing.
+        *   `[ ]` Every other case is unchanged.
+
+    *   `[ ]` processComplexJob/`processComplexJob.happy.test.ts`
+        *   `[ ]` Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
+        *   `[ ]` Each case that completes a planning pass adds an assertion on the returned `{ planned: true }` beside the deferral or completion write it already asserts.
+        *   `[ ]` New case: the JWT reaching `ctx.planComplexStage` is `payload.job.payload.user_jwt`, captured at the call site, so the retired parameter cannot return unnoticed.
+        *   `[ ]` Every existing arrangement and assertion is otherwise unchanged.
+
+    *   `[ ]` processComplexJob/`processComplexJob.parallel.test.ts`
+        *   `[ ]` Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
+        *   `[ ]` Each case adds an assertion on the returned `{ planned: true }`; every parallel-group arrangement, child-count assertion and `waiting_for_children` assertion is unchanged.
+
+    *   `[ ]` processComplexJob/`processComplexJob.intraStageDependency.test.ts`
+        *   `[ ]` Every case calls `processComplexJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
+        *   `[ ]` Each case adds an assertion on the returned `{ planned: true }`; every `waiting_for_prerequisite` arrangement, skeleton-construction assertion and idempotent-replay assertion is unchanged.
+        *   `[ ]` New case: a deferred-planning job whose row carries `prerequisite_job_id` and whose payload is a skeleton passes the entry guard and reaches the deferred arm, so the subtype admission is proven against the real function and not only against the guard.
+        *   `[ ]` New case: the inserted skeleton row's `planner_metadata` carries `recipe_step_id` equal to the blocked step's id, `recipe_template_id` equal to the resolved instance's `template_id`, `stage_slug` equal to the resolved stage slug, and `step_slug` equal to that step's `step_slug`, each captured off the insert and each asserted against a fixture value that differs from the others, so no marker can be satisfied by another's value.
+        *   `[ ]` New case: a skeleton built from a cloned instance and one built from a template instance each carry the same four markers, arranged in the same file so neither construction path can drop one.
+
+    *   `[ ]` processComplexJob/`processComplexJob.ts`
+        *   `[ ]` The function is declared as annotated above; the five-parameter list, its inline union and the `SupabaseClient`/`Database` imports it required are deleted. `ProcessComplexJobFn` and `ProcessComplexJobReturn` are imported from `./processComplexJob.interface.ts`.
+        *   `[ ]` `isProcessComplexJobPayload(payload)` is the first statement inside the function's `try`, its `false` branch returning the error arm; `params.dbClient` is destructured after it and replaces every `dbClient` reference; `payload.job` replaces every `job` reference, `parentJobId` still destructured from it.
+        *   `[ ]` The `else if (!isDialecticPlanJobPayload(job.payload))` branch is deleted; the entry guard proves that shape once. The `if (job.prerequisite_job_id)` selector and its `isDialecticSkeletonJobPayload` check stay, the check's throw becoming a return of the error arm.
+        *   `[ ]` `payload.job.user_id` replaces `projectOwnerUserId` at the `job_failed` notification; `payload.job.payload.user_jwt` replaces `authToken` at both `ctx.planComplexStage` call sites.
+        *   `[ ]` `stageSlugFromRow` and `stageSlugFromPayload` lose their `unknown` annotations and the `isRecord(job.payload) ? … : undefined` ternary; each is read at its declared type from the proven payload and the row. The same for `iterationNumberFromRow` and `iterationNumberFromPayload` in the skeleton builder.
+        *   `[ ]` The `skeletonPlannerMetadata` literal gains `recipe_template_id: instance.template_id`, `stage_slug: stageSlug` and `step_slug: step.step_slug` beside the `recipe_step_id: step.id` it carries, each value already in scope at that line. Its annotation stays `DialecticSkeletonJobPayload['planner_metadata']`.
+        *   `[ ]` The `stageSlug` throw becomes a return of the error arm carrying its existing message with `retriable: false`.
+        *   `[ ]` Each of the six `dbClient.from('dialectic_generation_jobs').update({ status: 'failed', … })` calls and its following bare `return` is replaced by a return of the error arm carrying an `Error` built from that call's existing message string, with `retriable: false`.
+        *   `[ ]` The outer `catch` keeps its `error` derivation, its `ctx.logger.error` call and its `failureReason` construction; the `failed` row update is deleted; the `job_failed` notification is wrapped in the non-retriable condition; and the `catch` ends by returning the error arm with `failureReason` as the message and the classified flag.
+        *   `[ ]` The end of the `try`, after the `waiting_for_children` update and its log line, returns `{ planned: true }`, as does every earlier path that completes a planning pass.
+        *   `[ ]` The `isDialecticPlanJobPayload`, `isRecord` and `isJson` imports from `_shared/utils/type_guards.ts` and the `isDialecticSkeletonJobPayload` import from `_shared/utils/type-guards/type_guards.dialectic.ts` collapse to one import of the symbols still called from the path they are exported on.
+        *   `[ ]` Nothing else changes: every query, every deferral and completion update, the recipe resolution, the child-job tracking, the planner delegation, the remaining members of the skeleton payload and its job row, the idempotent-replay handling and every log line stand exactly as they are.
+
+    *   `[ ]` processComplexJob/`processComplexJob.provides.ts`
+        *   `[ ]` Re-export `processComplexJob.ts`, `processComplexJob.interface.ts`, `processComplexJob.guard.ts` and `processComplexJob.mock.ts`.
+
+    *   `[ ]` supabase/functions/dialectic-service/`dialectic.interface.ts`
+        *   `[ ]` Delete `ProcessComplexJobParams`, `ProcessComplexJobPayload`, `ProcessComplexJobSuccessReturn`, `ProcessComplexJobErrorReturn`, `ProcessComplexJobReturn` and `ProcessComplexJobFn`, and the imports they required.
+        *   `[ ]` `IJobProcessors` keeps its `processComplexJob` member and takes `ProcessComplexJobFn` from this module's provides until the `processJob` node relocates the interface itself.
+
+    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.ts`
+        *   `[ ]` Delete `isProcessComplexJobParams`, `isProcessComplexJobPayload`, `isProcessComplexJobSuccessReturn` and `isProcessComplexJobErrorReturn`, and the type imports they required.
+
+    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.test.ts`
+        *   `[ ]` Delete the checklist blocks for those four guards and the imports they required. Every case they carry is present in this module's guard suite; none is lost.
+
+    *   `[ ]` supabase/functions/_shared/`dialectic.mock.ts`
+        *   `[ ]` Delete the four symbols each for `ProcessComplexJobParams`, `ProcessComplexJobPayload`, `ProcessComplexJobSuccessReturn` and `ProcessComplexJobErrorReturn`, and `mockProcessComplexJob`, and the type imports they required.
+        *   `[ ]` `_JobProcessorsDummyImpl` takes `mockProcessComplexJob` from this module's provides for its `processComplexJob` member.
+
+    *   `[ ]` supabase/functions/dialectic-worker/createJobContext/`createJobContext.interface.test.ts`
+        *   `[ ]` Delete the `ProcessComplexJob*` proof blocks and their imports. Every symbol they proved is proven in this module's interface suite; none is lost.
+        *   `[ ]` The `IJobProcessors` surface case keeps its `processComplexJob` key assertion.
+
+    *   `[ ]` `directionality`
+        *   `[ ]` Deps face inward: this module imports `IPlanJobContext` from `createJobContext`, service-layer types from `dialectic.interface.ts`, and two shared guards from the guard package. It exports its own surface outward through `processComplexJob.provides.ts`.
+        *   `[ ]` No cycle: `planComplexStage`, `resolveNextBlocker`, `createJobContext` and the guard package import nothing from this module. `dialectic.interface.ts` holds one inbound import for `IJobProcessors`, which closes when the `processJob` node relocates that interface.
+        *   `[ ]` `dialectic-worker/index.ts`, `index.test.ts`, `processJob.ts` and `processJob.test.ts` go transiently non-compilable at this node and are not edited here; each is a support file of the `processJob` or worker-root node later in this workstream.
+
+    *   `[ ]` `requirements`
+        *   `[ ]` `ProcessComplexJobFn` declares `payload: unknown`, and the implementation is annotated with it and declares no parameter types of its own — proven by the compiler.
+        *   `[ ]` The implementation contains no union composed at an annotation site and no parameter carrying two payload types — proven by the compiler.
+        *   `[ ]` A `DialecticSkeletonJobPayload` is assignable to `ProcessComplexJobPayload`'s payload position — interface test, typed assignment.
+        *   `[ ]` `isDialecticPlanJobPayload` accepts a whole skeleton payload, and still rejects a payload carrying an unrecognised key — shared guard suite, both cases in one file.
+        *   `[ ]` `isProcessComplexJobPayload` accepts both a plan payload and a skeleton payload — guard test, both cases in one file.
+        *   `[ ]` A deferred-planning job reaches the deferred arm through the entry guard — behavioral suite.
+        *   `[ ]` Every symbol `processComplexJob.interface.ts` exports is both imported and consumed by a proof block — interface test, bidirectional enumeration.
+        *   `[ ]` No path throws; every path returns a member of `ProcessComplexJobReturn` — behavioral suites, one case per branch of the interaction spec.
+        *   `[ ]` No path issues a `dialectic_generation_jobs` update carrying `status: 'failed'` — behavioral suites.
+        *   `[ ]` Every deferral and completion write keeps its condition and its values — behavioral suites, unchanged assertions.
+        *   `[ ]` A skeleton job's `planner_metadata` carries all four step markers, from both the cloned-instance and the template construction paths — behavioral suite, per-marker assertions against distinct fixture values.
+        *   `[ ]` No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
+        
+* `[ ]`   supabase/functions/dialectic-worker/processRenderJob/processRenderJob.ts **[BE] Canonize the RENDER processor as a module owning its whole contract: take the canonical `(deps, params, payload)` shape, prove the row once at entry, select its two arms by the predicate that already separates them, report both arms on a two-arm return, and surrender every `failed` write to the runner**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve an implementation that satisfies no contract. `ProcessRenderJobFn`, `ProcessRenderJobParams`, `ProcessRenderJobPayload` and the three return types are declared in the service-layer interface, and this file imports none of them: it takes five positional parameters and returns `Promise<void>`, so the declared contract and the implementation have diverged with nothing to catch it.
+      * `[ ]`   Solve a processor that decides its own job is dead. Both arms write `status: 'failed'` with a `completed_at` and an `error_details` string directly onto `dialectic_generation_jobs`, and neither reports anything, so the runner that claimed the row learns nothing and `max_retries` never applies to a RENDER job.
+      * `[ ]`   Solve two parameters carrying values the row already holds and one carrying nothing at all: `projectOwnerUserId` duplicates `job.user_id`, and `_authToken` is named to be ignored.
+      * `[ ]`   Solve eighteen redundant checks after the boundary. `isDialecticRenderJobPayload` throws a per-member diagnostic and never returns `false`, so its negated block is unreachable, the `isRecord` call before it is redundant, and every `isString`, `isNumber`, `isFileType`, `isDialecticStageSlug` and truthiness check that follows re-proves a member the guard has already proven.
+      * `[ ]`   Solve a dependency guarded at three call sites. `typeof ctx.notificationService.sendJobNotificationEvent === 'function'` tests an injected collaborator the compiler already types, at each of the two notification sends and again in the failure block.
+      * `[ ]`   Solve an untyped local and a doubled failure log. `let renderResult;` carries an implicit `any` across the call it receives, and the inner `try` around `renderDocument` catches, logs and rethrows into an outer `catch` that logs the same failure again.
+      * `[ ]`   Solve a failure-notification block built entirely from defaults: `sessionId` and `stageSlug` fall back to row columns through ternaries, `iterationNumber` falls through a nested ternary to a literal `1`, `documentKey` falls back to an empty string, and `modelId` is annotated with a union composed at its own site.
+      * `[ ]`   Solve a module with no contract of its own: six types sit in a service-layer interface, four guards and seventeen mock symbols in shared files, and its contract proofs in another module's interface test.
+      * `[ ]`   Functional goals:
+         * `[ ]`   The module owns its interface, interface test, mock, guard, guard test and provides beside the implementation and the two suites already in the folder. Consumers reach every symbol through `processRenderJob.provides.ts`.
+         * `[ ]`   The function is declared `export const processRenderJob: ProcessRenderJobFn = async (ctx, params, payload) => { … }`, its parameter types inferred from that annotation, returning `Promise<ProcessRenderJobReturn>`.
+         * `[ ]`   `isProcessRenderJobPayload(payload)` is the first statement of the function's `try`; its `false` return produces the error arm and its delegated throw reaches the `catch`.
+         * `[ ]`   `params.dbClient` replaces the `dbClient` parameter; `payload.job` replaces the `job` parameter; `payload.job.user_id` replaces every read of `projectOwnerUserId`; the `_authToken` parameter is deleted with the positional list.
+         * `[ ]`   The compressed arm is selected by `isCompressedRenderPayloadShape` and narrowed by `isDialecticRenderCompressedContextJobPayload`; the contribution arm is narrowed by `isDialecticRenderJobPayload`. Both arms share one `job_type`, so the selector answers a question and the guards prove the types.
+         * `[ ]`   Every member the contribution arm destructures is read off the proven payload, and the eighteen post-guard checks are deleted with the `isString`, `isNumber`, `isFileType`, `isRecord` and `isDialecticStageSlug` calls and imports that served only them.
+         * `[ ]`   The three `typeof ctx.notificationService.sendJobNotificationEvent === 'function'` tests are deleted; each send is gated on `payload.job.user_id` alone.
+         * `[ ]`   `renderResult` is annotated with the return type `ctx.documentRenderer.renderDocument` declares, and the inner `try`/`catch` around that call is deleted with the log it duplicated.
+         * `[ ]`   Both arms return `{ rendered: true }` on success and `{ error, retriable }` on failure, with `retriable: false` for a payload that fails its arm's guard and `retriable: true` for a failure raised by `renderDocument` or by a row write.
+         * `[ ]`   No path writes `status: 'failed'`, a `completed_at` alongside it, or an `error_details` value, and no path leaves the function by throwing.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   Both `status: 'completed'` writes stay, with their `completed_at` and their `results.pathContext` column sets unchanged on the contribution arm and the compressed arm alike. A rendered document is this processor's own outcome, not a failure verdict, and neither write moves to the runner.
+         * `[ ]`   The `render_started` and `render_chunk_completed` notifications keep their payloads, their recipients and their positions either side of the render call.
+         * `[ ]`   The `job_failed` notification keeps its `RENDER_FAILED` code, its `step_key`, its best-effort wrapper and its condition that the payload is not a compressed-render payload; every field it built from a default is read from the proven payload instead.
+         * `[ ]`   `processCompressedRenderJob` stays a module-private function in this file, taking the proven compressed payload and returning the same two-arm union.
+         * `[ ]`   The `RenderDocumentParams` and `RenderCompressedContextParams` literals, the `DocumentRendererDeps` literal assembled for each arm, and every `renderDocument` call keep their member sets and their values.
+         * `[ ]`   Every log line keeps its level and its message.
+         * `[ ]`   Every moved symbol keeps its production name.
+      * `[ ]`   Each goal is proven by a named case in this module's interface, guard, unit or integration suite.
+
+   * `[ ]`   `role`
+      * `[ ]`   App-layer orchestration of one RENDER job: prove the row, select which of the two render shapes it carries, assemble that shape's renderer params, delegate to the renderer, record the completed state and its path context, and report the pass as a return value.
+      * `[ ]`   The role is correct because rendering and its completion are this function's own outcomes — it is the only party that knows a document was produced and where it landed. Failure is not in that set: whether a failed job is retried is a queue policy applied to a row, and the runner holds the row.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not write `status: 'failed'`, `retrying` or `retry_loop_failed`, a `completed_at` alongside a failure, or an `error_details` value.
+         * `[ ]`   Do not read `max_retries` or `attempt_count`, and do not call `retryJob`.
+         * `[ ]`   Do not change either `completed` write, its `results.pathContext` shape, or the conditions that select it.
+         * `[ ]`   Do not declare `IJobProcessors`; it belongs to the `processJob` module and imports this module's `ProcessRenderJobFn` from its provides.
+         * `[ ]`   Do not declare `IRenderJobContext`; it belongs to `createJobContext` and is imported from there as this function's deps slot.
+         * `[ ]`   Do not declare `DialecticRenderCompressedContextJobPayload` or its two predicates; they belong to `enqueueRenderJob` and are imported from that module.
+         * `[ ]`   Do not edit `renderDocument`, `processJob` or `dialectic-worker/index.ts`; each has its own node.
+         * `[ ]`   Do not decompose the implementation body beyond the private arm function it already carries.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `dialectic-worker/processRenderJob/` — one RENDER job's pass from row proof through arm selection and renderer delegation to the completed state it records, the outcome it reports, and the contract that outcome satisfies.
+      * `[ ]`   Inside boundary: this processor's function type, params, payload, return arms, and every guard and mock for them; which of the two render shapes a row carries; which renderer params that shape produces; what the completed row records.
+      * `[ ]`   Outside boundary: whether a retriable failure is retried and what a job's terminal state is, both the runner's; the rendering itself and its path context, `renderDocument`'s; the compressed payload type and its two predicates, `enqueueRenderJob`'s; `IRenderJobContext`, `createJobContext`'s; `IJobProcessors`, `processJob`'s.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `../createJobContext/JobContext.interface.ts` (`IRenderJobContext`), which becomes this function's declared deps slot rather than its fourth positional parameter.
+         * `[ ]`   Layer classification: worker-layer context contract, constructed at the composition root.
+         * `[ ]`   Direction: inbound; this file already takes `ctx: IRenderJobContext`, so no new direction is opened and no wiring changes at the root.
+         * `[ ]`   Purpose: supply the renderer, the file manager, the storage reader, the notification service, the logger and the three chain collaborators this body passes to `renderDocument`.
+      * `[ ]`   Provider: `../enqueueRenderJob/enqueueRenderJob.guards.ts` (`isCompressedRenderPayloadShape`, `isDialecticRenderCompressedContextJobPayload`) and `../enqueueRenderJob/enqueueRenderJob.interface.ts` (`DialecticRenderCompressedContextJobPayload`).
+         * `[ ]`   Layer classification: sibling app-layer module, owner of the compressed-render payload.
+         * `[ ]`   Direction: inbound; already imported by this file.
+         * `[ ]`   Purpose: select the compressed arm with the non-throwing predicate and prove it with the throwing guard.
+      * `[ ]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticRenderJobPayload`).
+         * `[ ]`   Layer classification: shared guard package, owner of the contribution render payload.
+         * `[ ]`   Direction: inbound; the import path moves to the package that exports it, replacing the `_shared/utils/type_guards.ts` path this file uses today.
+         * `[ ]`   Purpose: prove the contribution arm's payload once, at the point the arm is entered.
+      * `[ ]`   Provider: `_shared/services/document_renderer/renderDocument/renderDocument.interface.ts` (`RenderDocumentParams`, `RenderCompressedContextParams`, `DocumentRendererDeps`, and the return type its render function declares).
+         * `[ ]`   Layer classification: shared service contract.
+         * `[ ]`   Direction: inbound; already imported.
+         * `[ ]`   Purpose: type the two params literals, the deps literal each arm assembles, and the result each arm receives.
+      * `[ ]`   Removed provider: `node:util` (`isString`, `isNumber`).
+         * `[ ]`   Layer classification: external runtime module.
+         * `[ ]`   Direction: inbound, and closed by this node.
+         * `[ ]`   Purpose retired: re-checking members the payload guard has already proven.
+      * `[ ]`   Removed provider: `_shared/utils/type_guards.ts` (`isRecord`, `isFileType`) and `_shared/utils/type-guards/type_guards.file_manager.ts` (`isDialecticStageSlug`).
+         * `[ ]`   Layer classification: shared utilities and guards.
+         * `[ ]`   Direction: inbound, and closed by this node.
+         * `[ ]`   Purpose retired: record checks and member re-proofs at a point where the arm guard has narrowed the payload.
+      * `[ ]`   Confirm:
+         * `[ ]`   `IRenderJobContext` is unchanged in shape: no member is added, removed or retyped.
+         * `[ ]`   `deps` is typed strong and is never guarded at function entry; only `payload` is proven.
+         * `[ ]`   No reverse dependency: `renderDocument`, `enqueueRenderJob`, `createJobContext` and `dialectic-service/dialectic.interface.ts` import nothing from this module.
+      * `[ ]`   `context_slice`
+         * `[ ]`   From `ctx`: `logger`, `notificationService`, `documentRenderer`, `downloadFromStorage`, `fileManager`, `assembleContributionChain`, `loadDocumentTemplate` and `mergeChunkContent` — the eight members this body reads.
+
+   * `[ ]`   processRenderJob/`processRenderJob.interface.test.ts`
+      * `[ ]`   Prove `ProcessRenderJobParams` and `ProcessRenderJobPayload` by their required-key surface records, each annotated with the exported symbol.
+      * `[ ]`   Prove `ProcessRenderJobSuccessReturn` and `ProcessRenderJobErrorReturn` as arms of `ProcessRenderJobReturn` by typed assignment.
+      * `[ ]`   Prove `ProcessRenderJobFn`'s declared return in the async form: `ReturnType<ProcessRenderJobFn>` admits `Promise<ProcessRenderJobReturn>`.
+      * `[ ]`   No block proves a payload contract through `Parameters<ProcessRenderJobFn>[2]`; that slot is `unknown` and admits everything.
+      * `[ ]`   Report the enumeration: every symbol `processRenderJob.interface.ts` exports, and the block proving each, in both directions.
+
+   * `[ ]`   processRenderJob/`processRenderJob.interface.ts`
+      * `[ ]`   Declare `ProcessRenderJobParams` with `dbClient`, and `ProcessRenderJobPayload` with `job: DialecticJobRow`.
+      * `[ ]`   Declare `ProcessRenderJobSuccessReturn` as `{ rendered: true }`, `ProcessRenderJobErrorReturn` as `{ error: Error; retriable: boolean }`, and `ProcessRenderJobReturn` as their two-arm union.
+      * `[ ]`   Declare `ProcessRenderJobFn` as `(deps: IRenderJobContext, params: ProcessRenderJobParams, payload: unknown) => Promise<ProcessRenderJobReturn>`.
+      * `[ ]`   `ProcessRenderJobPayload` narrows the row and not its payload column: the contribution and compressed shapes share one `job_type`, so neither is the row's declared payload type and each is proven inside its own arm.
+
+   * `[ ]`   `processRenderJob.interaction.spec`
+      * `[ ]`   Branch: the payload is not a `ProcessRenderJobPayload`.
+         * `[ ]`   Condition: the entry guard returns `false`, or its delegation throws.
+         * `[ ]`   Decision: `isProcessRenderJobPayload(payload)`.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error, retriable: false }`. No row is written, no notification is sent.
+      * `[ ]`   Branch: the row carries a compressed-render payload.
+         * `[ ]`   Condition: `isCompressedRenderPayloadShape(payload.job.payload)` is true.
+         * `[ ]`   Decision: that non-throwing predicate, which selects the arm and proves nothing.
+         * `[ ]`   Dependency call: none yet; the arm function is entered.
+         * `[ ]`   Outcome: whatever the compressed arm reaches below.
+      * `[ ]`   Branch, on the compressed arm: the payload fails its guard.
+         * `[ ]`   Condition: `isDialecticRenderCompressedContextJobPayload(payload.job.payload)` throws its per-member diagnostic.
+         * `[ ]`   Decision: the `catch`; the negated block is the compiler's narrowing device only.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error, retriable: false }`. No row is written.
+      * `[ ]`   Branch, on the compressed arm: the render succeeds.
+         * `[ ]`   Condition: `ctx.documentRenderer.renderDocument` returns its result.
+         * `[ ]`   Decision: none.
+         * `[ ]`   Dependency call: `ctx.documentRenderer.renderDocument(params.dbClient, rendererDeps, renderCompressedContextParams)`, then the `dialectic_generation_jobs` update setting `status: 'completed'`, `completed_at` and the eight-member `results.pathContext` it writes today.
+         * `[ ]`   Outcome: `{ rendered: true }`.
+      * `[ ]`   Branch, on the compressed arm: the render or the completion write fails.
+         * `[ ]`   Condition: a throw reaches that arm's `catch`.
+         * `[ ]`   Decision: none.
+         * `[ ]`   Dependency call: `ctx.logger.error` with its existing message; the `status: 'failed'` update that stood here is deleted.
+         * `[ ]`   Outcome: `{ error, retriable: true }`. No notification is sent, as none is sent today.
+      * `[ ]`   Branch: the row carries a contribution render payload.
+         * `[ ]`   Condition: `isCompressedRenderPayloadShape` is false.
+         * `[ ]`   Decision: `isDialecticRenderJobPayload(payload.job.payload)`, whose throw reaches the `catch` and whose negated block is the narrowing device only.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome on a failed guard: `{ error, retriable: false }`. No row is written; the `job_failed` notification is not sent, its condition already excluding a payload no arm proved.
+      * `[ ]`   Branch, on the contribution arm: the render starts.
+         * `[ ]`   Condition: the payload is proven and `payload.job.user_id` is present.
+         * `[ ]`   Decision: the truthiness of `payload.job.user_id` alone.
+         * `[ ]`   Dependency call: `ctx.notificationService.sendJobNotificationEvent` with the `render_started` payload it sends today.
+         * `[ ]`   Outcome: continue to the render call.
+      * `[ ]`   Branch, on the contribution arm: the render succeeds.
+         * `[ ]`   Condition: `ctx.documentRenderer.renderDocument` returns its result.
+         * `[ ]`   Decision: none.
+         * `[ ]`   Dependency call: `ctx.documentRenderer.renderDocument(params.dbClient, rendererDeps, renderDocumentParams)`; then `ctx.notificationService.sendJobNotificationEvent` with the `render_chunk_completed` payload when `payload.job.user_id` is present; then the `dialectic_generation_jobs` update setting `status: 'completed'`, `completed_at` and the `results.pathContext` it writes today, its two conditional members included on the same conditions.
+         * `[ ]`   Outcome: `{ rendered: true }`.
+      * `[ ]`   Branch, on the contribution arm: the render or the completion write fails.
+         * `[ ]`   Condition: a throw reaches the outer `catch`.
+         * `[ ]`   Decision: none; the inner `try` around the render call is deleted and the failure reaches the outer `catch` directly.
+         * `[ ]`   Dependency call: `ctx.logger.error` with its existing message; then, when `payload.job.user_id` is present and the payload was proven on this arm, the `job_failed` notification with its `RENDER_FAILED` code inside its existing best-effort wrapper, every field read off the proven payload and the row. The `status: 'failed'` update that stood here is deleted.
+         * `[ ]`   Outcome: `{ error, retriable: true }`.
+      * `[ ]`   Ordering and side effects: exactly one payload proof per invocation and exactly one arm entered; at most one `renderDocument` call; no `dialectic_generation_jobs` write carrying `status: 'failed'` on any path; at most one `completed` write, and only after a successful render; `render_started` precedes the render call and `render_chunk_completed` follows it; at most one `job_failed` notification, and none on the compressed arm; every path leaves the function by returning a member of the union, and nothing leaves it by throwing.
+
+   * `[ ]`   processRenderJob/`processRenderJob.mock.ts`
+      * `[ ]`   The four symbols for each owned object type: `ProcessRenderJobParams`, `ProcessRenderJobPayload`, `ProcessRenderJobSuccessReturn` and `ProcessRenderJobErrorReturn`.
+      * `[ ]`   `buildProcessRenderJobPayload` composes `buildDialecticJobRow`; the two render shapes are reached by overriding the row's payload with the builder its owner exports — `buildDialecticRenderJobPayload` from the shared mock file, `buildDialecticRenderCompressedContextJobPayload` from `enqueueRenderJob`'s mock.
+      * `[ ]`   `mockProcessRenderJob: ProcessRenderJobFn`, returning `buildProcessRenderJobSuccessReturn()`, identical signature, no options bag, no recording.
+      * `[ ]`   `ProcessRenderJobReturn` takes no builder of its own; each arm has one.
+
+   * `[ ]`   processRenderJob/`processRenderJob.guard.test.ts`
+      * `[ ]`   Prove `isProcessRenderJobParams`, `isProcessRenderJobPayload`, `isProcessRenderJobSuccessReturn` and `isProcessRenderJobErrorReturn` against the case checklist, fixtures drawn from this module's builders and invalidators.
+      * `[ ]`   A case proves `isProcessRenderJobPayload` accepts a row carrying a contribution render payload and a row carrying a compressed-render payload, both in the same file, so the row-only proof cannot narrow to one arm.
+      * `[ ]`   Each return-arm guard accepts its own arm and rejects the other.
+
+   * `[ ]`   processRenderJob/`processRenderJob.guard.ts`
+      * `[ ]`   Implement the four guards this module now owns in the bodies they carry today, calling `isDialecticJobRow` from the shared guard package for the imported type `isProcessRenderJobPayload` delegates to.
+
+   * `[ ]`   processRenderJob/`processRenderJob.test.ts`
+      * `[ ]`   Every case calls `processRenderJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call; every fixture is drawn from this module's builders, the row's payload overridden with the builder the arm under test requires.
+      * `[ ]`   Each case that asserts a `failed` row write asserts instead the returned error arm with `retriable: true` and that no `dialectic_generation_jobs` update carrying `status: 'failed'` was issued.
+      * `[ ]`   Each case that completes a render adds an assertion on the returned `{ rendered: true }` beside the `completed` write it already asserts.
+      * `[ ]`   New case: a payload that is not a `ProcessRenderJobPayload` returns the error arm with `retriable: false`, writes no row and sends no notification.
+      * `[ ]`   New case: a row whose payload fails `isDialecticRenderJobPayload` returns the error arm with `retriable: false` and sends no `job_failed` notification, arranged beside a render-failure case so the two flags cannot be one constant.
+      * `[ ]`   New case: a row whose payload fails `isDialecticRenderCompressedContextJobPayload` after `isCompressedRenderPayloadShape` selected the compressed arm returns the error arm with `retriable: false`.
+      * `[ ]`   New case: a compressed-render row reaches `renderDocument` with `RenderCompressedContextParams` and a contribution row reaches it with `RenderDocumentParams`, captured at the call site and arranged in the same file so the arm selection cannot collapse.
+      * `[ ]`   New case: a job whose row carries no `user_id` sends neither `render_started` nor `render_chunk_completed` and still returns `{ rendered: true }`.
+      * `[ ]`   New case: the `job_failed` payload's `sessionId`, `stageSlug`, `iterationNumber`, `modelId` and `document_key` are the proven payload's own values, arranged so that a row column differing from the payload would fail the assertion.
+      * `[ ]`   Every remaining case keeps its coverage and its assertions.
+
+   * `[ ]`   processRenderJob/`processRenderJob.ts`
+      * `[ ]`   The function is declared as annotated above; the five-parameter list and the `SupabaseClient`/`Database` imports it required are deleted. `ProcessRenderJobFn` and `ProcessRenderJobReturn` are imported from `./processRenderJob.interface.ts`.
+      * `[ ]`   `isProcessRenderJobPayload(payload)` is the first statement inside the function's `try`, its `false` branch returning the error arm; `params.dbClient` is destructured after it and replaces every `dbClient` reference; `payload.job` replaces every `job` reference, `jobId` still destructured from it; `payload.job.user_id` replaces every `projectOwnerUserId` reference including each gate, which becomes the same truthiness check on that value.
+      * `[ ]`   The `isRecord(job.payload)` call in the contribution arm's guard expression is deleted, leaving `isDialecticRenderJobPayload` as the arm's sole proof; its negated block keeps its throw as the compiler's narrowing device and is the only statement in that block.
+      * `[ ]`   The eighteen post-guard checks — the four-way truthiness test, `isNumber(iterationNumber)`, `isFileType(documentKey)`, the `sourceContributionId` truthiness test, the six `isString` tests, the `template_filename` non-empty test and `isDialecticStageSlug(stageSlug)` — are deleted with their throws, and the `node:util`, `isFileType`, `isRecord` and `isDialecticStageSlug` imports go with them.
+      * `[ ]`   The three `typeof ctx.notificationService.sendJobNotificationEvent === 'function'` tests are deleted, each gate becoming the truthiness of `payload.job.user_id` alone.
+      * `[ ]`   `let renderResult;` becomes a `const` annotated with the return type `renderDocument` declares, and the inner `try`/`catch` around that call is deleted with its two log lines; the outer `catch` keeps its own.
+      * `[ ]`   Each `dbClient.from('dialectic_generation_jobs').update({ status: 'failed', … })` call — one in each arm — is deleted, and each arm's `catch` ends by returning the error arm with `retriable: true`.
+      * `[ ]`   Both `status: 'completed'` updates keep their column sets and values, and each is followed by `return { rendered: true }`.
+      * `[ ]`   The `job_failed` block reads `sessionId`, `stageSlug`, `iterationNumber`, `model_id` and `documentKey` off the payload proven on the contribution arm; the five ternary fallbacks, the literal `1`, the empty-string default and the `string | undefined` annotation are deleted, and the block keeps its `RENDER_FAILED` code, its `step_key`, its condition and its best-effort wrapper.
+      * `[ ]`   `processCompressedRenderJob` takes `ctx`, `params.dbClient`, the proven row and the proven compressed payload, and returns `Promise<ProcessRenderJobReturn>`; its caller returns that value directly.
+      * `[ ]`   The `isDialecticRenderJobPayload` import moves to `_shared/utils/type-guards/type_guards.dialectic.ts`.
+      * `[ ]`   Nothing else changes: the two params literals, the two `DocumentRendererDeps` literals, both `renderDocument` calls, both `results.pathContext` shapes, the two notification payloads and every surviving log line stand exactly as they are.
+
+   * `[ ]`   processRenderJob/`processRenderJob.provides.ts`
+      * `[ ]`   Re-export `processRenderJob.ts`, `processRenderJob.interface.ts`, `processRenderJob.guard.ts` and `processRenderJob.mock.ts`.
+
+   * `[ ]`   supabase/functions/dialectic-service/`dialectic.interface.ts`
+      * `[ ]`   Delete `ProcessRenderJobParams`, `ProcessRenderJobPayload`, `ProcessRenderJobSuccessReturn`, `ProcessRenderJobErrorReturn`, `ProcessRenderJobReturn` and `ProcessRenderJobFn`, and the imports they required.
+      * `[ ]`   `IJobProcessors` keeps its `processRenderJob` member and takes `ProcessRenderJobFn` from this module's provides until the `processJob` node relocates the interface itself.
+
+   * `[ ]`   supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.ts`
+      * `[ ]`   Delete `isProcessRenderJobParams`, `isProcessRenderJobPayload`, `isProcessRenderJobSuccessReturn` and `isProcessRenderJobErrorReturn`, and the type imports they required.
+
+   * `[ ]`   supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.test.ts`
+      * `[ ]`   Delete the checklist blocks for those four guards and the imports they required. Every case they carry is present in this module's guard suite; none is lost.
+
+   * `[ ]`   supabase/functions/_shared/`dialectic.mock.ts`
+      * `[ ]`   Delete the four symbols each for `ProcessRenderJobParams`, `ProcessRenderJobPayload`, `ProcessRenderJobSuccessReturn` and `ProcessRenderJobErrorReturn`, and `mockProcessRenderJob`, and the type imports they required.
+      * `[ ]`   `_JobProcessorsDummyImpl` takes `mockProcessRenderJob` from this module's provides for its `processRenderJob` member.
+
+   * `[ ]`   supabase/functions/dialectic-worker/createJobContext/`createJobContext.interface.test.ts`
+      * `[ ]`   Delete the `ProcessRenderJob*` proof blocks and their imports. Every symbol they proved is proven in this module's interface suite; none is lost.
+      * `[ ]`   The `IJobProcessors` surface case keeps its `processRenderJob` key assertion.
+
+   * `[ ]`   processRenderJob/`processRenderJob.integration.test.ts`
+      * `[ ]`   Every call becomes `processRenderJob(ctx, { dbClient }, { job })`, and every fixture is drawn from this module's builders.
+      * `[ ]`   The integrated chain is real end to end: `processRenderJob` → `renderDocument` → `fileManager`, and on the compressed arm `processRenderJob` → `renderDocument` with the compressed params. No function in that chain is mocked, stubbed or replaced by a builder.
+      * `[ ]`   Mocked at the outer boundary only: the Supabase client and storage.
+      * `[ ]`   A case drives a contribution render through the chain: the document is written, the row is `completed` with its `results.pathContext`, and the call returns `{ rendered: true }`.
+      * `[ ]`   A case drives a compressed-context render through the chain: the row is `completed` with its own `results.pathContext` member set, and the call returns `{ rendered: true }`.
+      * `[ ]`   A case drives a render failure through the chain and asserts the returned error arm with `retriable: true` and no `dialectic_generation_jobs` write carrying `status: 'failed'`, so the deleted writes are proven absent against real collaborators and not only against mocks.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Deps face inward: this module imports `IRenderJobContext` from `createJobContext`, the compressed payload and its two predicates from `enqueueRenderJob`, the contribution payload guard from the shared guard package, and the renderer contract from the shared service. It exports its own surface outward through `processRenderJob.provides.ts`.
+      * `[ ]`   The `node:util` edge is removed and not replaced.
+      * `[ ]`   No cycle: `renderDocument`, `enqueueRenderJob`, `createJobContext` and the guard package import nothing from this module. `dialectic.interface.ts` holds one inbound import for `IJobProcessors`, which closes when the `processJob` node relocates that interface.
+      * `[ ]`   `dialectic-worker/index.ts`, `index.test.ts`, `processJob.ts` and `processJob.test.ts` go transiently non-compilable at this node and are not edited here; each is a support file of the `processJob` or worker-root node later in this workstream.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   `ProcessRenderJobFn` declares `payload: unknown`, and the implementation is annotated with it and declares no parameter types of its own — proven by the compiler.
+      * `[ ]`   No value in the implementation carries an implicit `any` or a union composed at its annotation site — proven by the compiler.
+      * `[ ]`   Every symbol `processRenderJob.interface.ts` exports is both imported and consumed by a proof block — interface test, bidirectional enumeration.
+      * `[ ]`   Every type this module owns, less the top-level union, has a guard with no false positives and no false negatives — guard test, the case checklist per guard.
+      * `[ ]`   `isProcessRenderJobPayload` accepts a row carrying either render shape — guard test, both cases in one file.
+      * `[ ]`   No path throws; every path returns a member of `ProcessRenderJobReturn` — unit test, one case per branch of the interaction spec.
+      * `[ ]`   A payload that fails its arm's guard returns `retriable: false` and a render failure returns `retriable: true` — unit test, both arranged in one file.
+      * `[ ]`   No path issues a `dialectic_generation_jobs` update carrying `status: 'failed'` — unit test and integration test.
+      * `[ ]`   Both `completed` writes keep their column sets and fire only after a successful render — unit test and integration test.
+      * `[ ]`   Each arm reaches `renderDocument` with its own params type — unit test, captured-argument assertions in one file.
+      * `[ ]`   Every `job_failed` field is the proven payload's own value — unit test.
+      * `[ ]`   No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
 
 * `[ ]`   supabase/functions/dialectic-worker/processJob.ts **[BE] Take the canonical `(deps, params, payload)` shape and report the dispatch outcome on a two-arm return: call every processor by its reshaped contract, rebuild the `ProcessCompressJobDeps` literal, and delete the redundant COMPRESS payload gate and the `failed` write behind it**
 

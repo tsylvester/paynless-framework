@@ -8,30 +8,30 @@
 
 import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../types_db.ts";
-import { DialecticStageSlug, FileType, ModelContributionFileTypes } from "../_shared/types/file_manager.types.ts";
-import { logger } from "../_shared/logger.ts";
-import { downloadFromStorage, deleteFromStorage, uploadToStorage } from "../_shared/supabase_storage_utils.ts";
-import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
-import { assembleChunks } from "../_shared/utils/assembleChunks/assembleChunks.provides.ts";
-import { FileManagerService } from "../_shared/services/file_manager.ts";
-import { NotificationService } from "../_shared/utils/notification.service.ts";
-import { renderDocument } from "../_shared/services/document_renderer/renderDocument/renderDocument.ts";
-import { assembleContributionChain } from "../_shared/services/document_renderer/assembleContributionChain/assembleContributionChain.provides.ts";
-import { loadDocumentTemplate } from "../_shared/services/document_renderer/loadDocumentTemplate/loadDocumentTemplate.provides.ts";
-import { mergeChunkContent } from "../_shared/services/document_renderer/mergeChunkContent/mergeChunkContent.provides.ts";
-import { shouldEnqueueRenderJob } from "../_shared/utils/shouldEnqueueRenderJob.ts";
-import { resolveTemplateFilename, type BoundResolveTemplateFilenameFn } from "../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.provides.ts";
-import { processRenderJob } from "./processRenderJob.ts";
-import { enqueueRenderJob } from "./enqueueRenderJob/enqueueRenderJob.ts";
-import type { EnqueueRenderJobDeps, EnqueueRenderJobParams } from "./enqueueRenderJob/enqueueRenderJob.interface.ts";
-import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
-import type { IRenderJobContext } from "./createJobContext/JobContext.interface.ts";
+import type { Database } from "../../types_db.ts";
+import { DialecticStageSlug, FileType, ModelContributionFileTypes } from "../../_shared/types/file_manager.types.ts";
+import { logger } from "../../_shared/logger.ts";
+import { downloadFromStorage, deleteFromStorage, uploadToStorage } from "../../_shared/supabase_storage_utils.ts";
+import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
+import { assembleChunks } from "../../_shared/utils/assembleChunks/assembleChunks.provides.ts";
+import { FileManagerService } from "../../_shared/services/file_manager.ts";
+import { NotificationService } from "../../_shared/utils/notification.service.ts";
+import { renderDocument } from "../../_shared/services/document_renderer/renderDocument/renderDocument.ts";
+import { assembleContributionChain } from "../../_shared/services/document_renderer/assembleContributionChain/assembleContributionChain.provides.ts";
+import { loadDocumentTemplate } from "../../_shared/services/document_renderer/loadDocumentTemplate/loadDocumentTemplate.provides.ts";
+import { mergeChunkContent } from "../../_shared/services/document_renderer/mergeChunkContent/mergeChunkContent.provides.ts";
+import { shouldEnqueueRenderJob } from "../../_shared/utils/shouldEnqueueRenderJob.ts";
+import { resolveTemplateFilename, type BoundResolveTemplateFilenameFn } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.provides.ts";
+import { processRenderJob } from "../processRenderJob/processRenderJob.ts";
+import { enqueueRenderJob } from "../enqueueRenderJob/enqueueRenderJob.ts";
+import type { EnqueueRenderJobDeps, EnqueueRenderJobParams } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
+import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import type { IRenderJobContext } from "../createJobContext/JobContext.interface.ts";
 import {
   buildEnqueueRenderCompressedContextPayload,
   buildEnqueueRenderJobPayload,
   invalidateDialecticRenderCompressedContextJobPayload,
-} from "./enqueueRenderJob/enqueueRenderJob.mock.ts";
+} from "../enqueueRenderJob/enqueueRenderJob.mock.ts";
 import {
   initializeTestDeps,
   initializeSupabaseAdminClient,
@@ -39,7 +39,7 @@ import {
   coreCleanupTestResources,
   coreUpsertTestProviders,
   registerUndoAction,
-} from "../_shared/_integration.test.utils.ts";
+} from "../../_shared/_integration.test.utils.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers

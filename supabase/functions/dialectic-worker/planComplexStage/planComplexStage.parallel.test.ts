@@ -11,7 +11,7 @@ import {
     assertExists,
 } from 'jsr:@std/assert@0.225.3';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database } from '../types_db.ts';
+import type { Database } from '../../types_db.ts';
 import {
     DialecticJobRow,
     DialecticPlanJobPayload,
@@ -19,19 +19,19 @@ import {
     DialecticExecuteJobPayload,
     GranularityPlannerFn,
     SourceDocument,
-} from '../dialectic-service/dialectic.interface.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
 import { planComplexStage } from './task_isolator.ts';
-import { createPlanJobContext } from './createJobContext/createJobContext.ts';
-import { createMockRootContext } from './createJobContext/JobContext.mock.ts';
+import { createPlanJobContext } from '../createJobContext/createJobContext.ts';
+import { createMockRootContext } from '../createJobContext/JobContext.mock.ts';
 import {
     isDialecticExecuteJobPayload,
     isJson,
-} from '../_shared/utils/type_guards.ts';
-import { isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
-import { buildDialecticJobRow, buildDialecticPlanJobPayload, buildDialecticStageRecipeStep, buildSourceDocument, buildDialecticExecuteJobPayload, buildInputRule, invalidateDialecticExecuteJobPayload } from '../_shared/dialectic.mock.ts';
-import type { DialecticExecuteJobPayloadCorruptions } from '../_shared/dialectic.mock.ts';
+} from '../../_shared/utils/type_guards.ts';
+import { isDialecticStageRecipeStep } from '../../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
+import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
+import { FileType } from '../../_shared/types/file_manager.types.ts';
+import { buildDialecticJobRow, buildDialecticPlanJobPayload, buildDialecticStageRecipeStep, buildSourceDocument, buildDialecticExecuteJobPayload, buildInputRule, invalidateDialecticExecuteJobPayload } from '../../_shared/dialectic.mock.ts';
+import type { DialecticExecuteJobPayloadCorruptions } from '../../_shared/dialectic.mock.ts';
 
 describe('planComplexStage', () => {
     describe('Handling of Step Properties', () => {

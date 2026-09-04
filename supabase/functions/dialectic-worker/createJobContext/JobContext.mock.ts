@@ -10,7 +10,7 @@ import { mockNotificationService } from '../../_shared/utils/notification.servic
 import { MockLogger } from '../../_shared/logger.mock.ts';
 import { createMockDownloadFromStorage } from '../../_shared/supabase_storage_utils.mock.ts';
 import { mockSendMessageStream } from '../../_shared/ai_service/ai_provider.mock.ts';
-import { createMockFindSourceDocuments } from '../findSourceDocuments.mock.ts';
+import { createMockFindSourceDocuments } from '../findSourceDocuments/findSourceDocuments.mock.ts';
 import { extractSourceGroupFragment } from '../../_shared/utils/path_utils.ts';
 import { pickLatest } from '../../_shared/utils/pickLatest.ts';
 import { applyInputsRequiredScope } from '../../_shared/utils/applyInputsRequiredScope.ts';

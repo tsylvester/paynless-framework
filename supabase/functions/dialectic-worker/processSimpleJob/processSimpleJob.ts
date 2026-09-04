@@ -1,20 +1,20 @@
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import type { Database, Tables } from '../types_db.ts';
+import type { Tables } from '../types_db.ts';
 import {
   DialecticRecipeStep,
-  DialecticJobRow,
   DialecticSessionRow,
-  FailedAttemptError,
-  ModelProcessingResult,
+  ProcessSimpleJobFn,
   PromptConstructionPayload,
 } from '../dialectic-service/dialectic.interface.ts';
-import { IJobContext } from './createJobContext/JobContext.interface.ts';
-import type { PrepareModelJobParams, PrepareModelJobPayload } from './prepareModelJob/prepareModelJob.interface.ts';
-import { PrepareModelJobExecutionError } from './prepareModelJob/prepareModelJob.interface.ts';
+import type {
+  PrepareModelJobParams,
+  PrepareModelJobPayload,
+} from './prepareModelJob/prepareModelJob.provides.ts';
 import {
+  PrepareModelJobExecutionError,
   isPrepareModelJobErrorReturn,
-  isPrepareModelJobSuccessReturn,
-} from './prepareModelJob/prepareModelJob.guard.ts';
+  isPrepareModelJobPendingReturn,
+  isPrepareModelJobQueuedReturn,
+} from './prepareModelJob/prepareModelJob.provides.ts';
 import { isGatherArtifactsErrorReturn } from './gatherArtifacts/gatherArtifacts.guard.ts';
 import { isSelectedAiProvider } from "../_shared/utils/type_guards.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
@@ -22,30 +22,15 @@ import { ContextWindowError } from '../_shared/utils/errors.ts';
 import { Messages } from '../_shared/types.ts';
 import { StageContext, type AssemblePromptOptions } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import { isDialecticRecipeTemplateStep, isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
-import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import { getInitialPromptContent } from '../_shared/utils/project-initial-prompt.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
-import { ResourceDocuments } from '../_shared/types.ts';
 import { isDialecticExecuteJobPayload } from '../_shared/utils/type-guards/type_guards.dialectic.ts';
 
-export async function processSimpleJob(
-    dbClient: SupabaseClient<Database>,
-    job: DialecticJobRow,
-    projectOwnerUserId: string,
-    ctx: IJobContext,
-    authToken: string,
-) {
+export const processSimpleJob: ProcessSimpleJobFn = async (ctx, params, payload) => {
+    const { dbClient } = params;
+    const { job } = payload;
     const { id: jobId, attempt_count: currentAttempt, max_retries } = job;
-    if(!isRecord(job.payload) || !isDialecticExecuteJobPayload(job.payload)) {
-        throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
-    }
-    const {
-        stageSlug,
-        projectId,
-        model_id,
-        sessionId,
-    } = job.payload;
-    
+
     ctx.logger.info(`[dialectic-worker] [processSimpleJob] Starting attempt ${currentAttempt + 1}/${max_retries + 1} for job ID: ${jobId}`);
     let providerDetails: Tables<'ai_providers'> | undefined;
 
@@ -54,6 +39,16 @@ export async function processSimpleJob(
     let stepKeyForNotification: string | undefined;
 
     try {
+        if (!isDialecticExecuteJobPayload(job.payload)) {
+            throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
+        }
+        const {
+            stageSlug,
+            projectId,
+            model_id,
+            sessionId,
+        } = job.payload;
+
         if (!stageSlug) throw new Error('stageSlug is required in the payload.');
         if (!projectId) throw new Error('projectId is required in the payload.');
         if (!sessionId) throw new Error('sessionId is required in the payload.');
@@ -68,14 +63,14 @@ export async function processSimpleJob(
         }
         providerDetails = providerData;
 
-        if (currentAttempt === 0 && projectOwnerUserId) {
+        if (currentAttempt === 0 && job.user_id) {
             await ctx.notificationService.sendDialecticContributionStartedEvent({
                 sessionId,
                 modelId: providerDetails.id,
                 iterationNumber: sessionData.iteration_count,
                 type: 'dialectic_contribution_started',
                 job_id: jobId,
-            }, projectOwnerUserId);
+            }, job.user_id);
         }
         
         const { data: project } = await dbClient.from('dialectic_projects').select('*, dialectic_domains(id, name, description)').eq('id', projectId).single();
@@ -217,20 +212,6 @@ export async function processSimpleJob(
         notificationDocumentKey = resolvedRecipeStep.output_type;
         stepKeyForNotification = resolvedRecipeStep.step_slug;
 
-        // Emit execute_started at EXECUTE job start
-        if (currentAttempt === 0 && projectOwnerUserId) {
-            await ctx.notificationService.sendJobNotificationEvent({
-                type: 'execute_started',
-                sessionId,
-                stageSlug,
-                job_id: jobId,
-                document_key: notificationDocumentKey,
-                modelId: providerDetails.id,
-                iterationNumber: sessionData.iteration_count,
-                step_key: resolvedRecipeStep.step_slug,
-            }, projectOwnerUserId);
-        }
-
         const stageContext: StageContext = {
             ...stageData,
             system_prompts,
@@ -302,13 +283,13 @@ export async function processSimpleJob(
         }
 
         const gatherResult = await ctx.gatherArtifacts(
-            { dbClient, projectId, sessionId, iterationNumber: sessionData.iteration_count },
+            { dbClient, projectId, sessionId, iterationNumber: sessionData.iteration_count, stageSlug, output_type: resolvedRecipeStep.output_type },
             { inputsRequired: resolvedRecipeStep.inputs_required },
         );
         if (isGatherArtifactsErrorReturn(gatherResult)) {
-            throw gatherResult.error;
+            return { error: gatherResult.error, retriable: gatherResult.retriable };
         }
-        const resourceDocuments: ResourceDocuments = gatherResult.artifacts;
+        const resourceDocuments = gatherResult.artifacts;
 
         const promptConstructionPayload: PromptConstructionPayload = {
             conversationHistory,
@@ -324,16 +305,12 @@ export async function processSimpleJob(
 
         const prepareParams: PrepareModelJobParams = {
             dbClient,
-            authToken,
-            job,
-            projectOwnerUserId,
-            providerRow: providerDetails,
-            sessionData,
         };
 
         const preparePayload: PrepareModelJobPayload = {
+            job,
+            providerRow: providerDetails,
             promptConstructionPayload,
-            compressionStrategy: getSortedCompressionCandidates,
             inputsRelevance: stageContext.recipe_step.inputs_relevance,
             inputsRequired: stageContext.recipe_step.inputs_required,
         };
@@ -352,11 +329,29 @@ export async function processSimpleJob(
             );
         }
 
-        if (!isPrepareModelJobSuccessReturn(prepareResult)) {
-            throw new Error('prepareModelJob returned an invalid result shape');
+        if (isPrepareModelJobPendingReturn(prepareResult)) {
+            return { deferred: true };
         }
 
-        if (projectOwnerUserId) {
+        if (!isPrepareModelJobQueuedReturn(prepareResult)) {
+            return { error: new Error('prepareModelJob returned an invalid result shape'), retriable: false };
+        }
+
+        // Emit execute_started when the job actually dispatches (not when it defers to children)
+        if (currentAttempt === 0 && job.user_id) {
+            await ctx.notificationService.sendJobNotificationEvent({
+                type: 'execute_started',
+                sessionId,
+                stageSlug,
+                job_id: jobId,
+                document_key: notificationDocumentKey,
+                modelId: providerDetails.id,
+                iterationNumber: sessionData.iteration_count,
+                step_key: resolvedRecipeStep.step_slug,
+            }, job.user_id);
+        }
+
+        if (job.user_id) {
             await ctx.notificationService.sendJobNotificationEvent({
                 type: 'execute_completed',
                 sessionId,
@@ -366,8 +361,10 @@ export async function processSimpleJob(
                 modelId: providerDetails.id,
                 iterationNumber: sessionData.iteration_count,
                 document_key: notificationDocumentKey,
-            }, projectOwnerUserId);
+            }, job.user_id);
         }
+
+        return { dispatched: true };
 
     } catch (e) {
         let prepareJobRetriable: boolean | undefined = undefined;
@@ -381,22 +378,17 @@ export async function processSimpleJob(
 
         if (error instanceof ContextWindowError) {
             ctx.logger.error(`[dialectic-worker] [processSimpleJob] ContextWindowError for job ${jobId}: ${error.message}`);
-            await dbClient.from('dialectic_generation_jobs').update({
-                status: 'failed',
-                completed_at: new Date().toISOString(),
-                error_details: { message: `Context window limit exceeded: ${error.message}` },
-            }).eq('id', jobId);
             // Emit internal failure event for UI state routing
-            if (projectOwnerUserId) {
+            if (job.user_id) {
                 await ctx.notificationService.sendContributionGenerationFailedEvent({
                     type: 'other_generation_failed',
-                    sessionId: sessionId,
+                    sessionId: job.payload.sessionId,
                     job_id: jobId,
                     error: {
                         code: 'CONTEXT_WINDOW_ERROR',
                         message: `Context window limit exceeded, message too large to send to the model and it cannot be compressed further: ${error.message}`,
                     },
-                }, projectOwnerUserId);
+                }, job.user_id);
 
                 // User-facing historical notification
                 if(typeof job.payload.stageSlug !== 'string') {
@@ -412,24 +404,24 @@ export async function processSimpleJob(
                         message: `Context window limit exceeded, message too large to send to the model and it cannot be compressed further: ${error.message}`,
                     },
                     job_id: jobId,
-                }, projectOwnerUserId);
+                }, job.user_id);
 
                 // Document-centric failure event
                 if (notificationDocumentKey) {
                     await ctx.notificationService.sendJobNotificationEvent({
                         type: 'job_failed',
-                        sessionId: String(sessionId),
-                        stageSlug: String(stageSlug),
+                        sessionId: job.payload.sessionId,
+                        stageSlug: job.payload.stageSlug,
                         job_id: jobId,
                         step_key: stepKeyForNotification ?? 'unknown',
                         document_key: notificationDocumentKey,
-                        modelId: model_id,
+                        modelId: job.payload.model_id,
                         iterationNumber: job.iteration_number,
                         error: { code: 'CONTEXT_WINDOW_ERROR', message: error.message },
-                    }, projectOwnerUserId);
+                    }, job.user_id);
                 }
             }
-            return;
+            return { error, retriable: false };
         }
 
         // Classify non-retryable failures (fail immediately, emit internal + user-facing notifications)
@@ -437,20 +429,14 @@ export async function processSimpleJob(
         const lower = message.toLowerCase();
 
         const emitImmediateFailure = async (code: string, userMessage: string) => {
-            await dbClient.from('dialectic_generation_jobs').update({
-                status: 'failed',
-                completed_at: new Date().toISOString(),
-                error_details: { code, message: userMessage },
-            }).eq('id', jobId);
-
-            if (projectOwnerUserId) {
+            if (job.user_id) {
                 // Internal event (UI state routing)
                 await ctx.notificationService.sendContributionGenerationFailedEvent({
                     type: 'other_generation_failed',
-                    sessionId: sessionId,
+                    sessionId: job.payload.sessionId,
                     job_id: jobId,
                     error: { code, message: userMessage },
-                }, projectOwnerUserId);
+                }, job.user_id);
 
                 // User-facing historical notification
                 if(!isRecord(job.payload) || typeof job.payload.stageSlug !== 'string') {
@@ -469,21 +455,21 @@ export async function processSimpleJob(
                     projectId: job.payload.projectId,
                     error: { code, message: userMessage },
                     job_id: jobId,
-                }, projectOwnerUserId);
+                }, job.user_id);
 
                 // Document-centric failure event
                 if (notificationDocumentKey) {
                     await ctx.notificationService.sendJobNotificationEvent({
                         type: 'job_failed',
-                        sessionId: String(sessionId),
-                        stageSlug: String(stageSlug),
+                        sessionId: job.payload.sessionId,
+                        stageSlug: job.payload.stageSlug,
                         job_id: jobId,
                         step_key: stepKeyForNotification ?? 'unknown',
                         document_key: notificationDocumentKey,
-                        modelId: model_id,
+                        modelId: job.payload.model_id,
                         iterationNumber: job.iteration_number,
                         error: { code, message: userMessage },
-                    }, projectOwnerUserId);
+                    }, job.user_id);
                 }
             }
         };
@@ -491,166 +477,98 @@ export async function processSimpleJob(
         // Auth missing on payload should fail immediately and surface to caller
         if (lower.includes('payload.user_jwt required')) {
             await emitImmediateFailure('AUTH_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Affordability / NSF signals
         if (lower.includes('insufficient funds')) {
             await emitImmediateFailure('INSUFFICIENT_FUNDS', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Wallet missing
         if (lower.includes('wallet is required')) {
             await emitImmediateFailure('WALLET_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Missing or invalid initial prompt signals
         if (lower.includes('initial prompt is required') || lower.includes('rendered initial prompt is empty')) {
             await emitImmediateFailure('INVALID_INITIAL_PROMPT', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Overlays missing for stage configuration
         if (lower.includes('stage_config_missing_overlays')) {
             await emitImmediateFailure('STAGE_CONFIG_MISSING_OVERLAYS', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Continuation dependency missing
         if (lower.includes('failed to retrieve root contribution')) {
             await emitImmediateFailure('CONTINUATION_ROOT_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Missing core entities / config
         if (lower.includes('session ') && lower.includes(' not found')) {
             await emitImmediateFailure('SESSION_NOT_FOUND', message);
-            throw error;
+            return { error, retriable: false };
         }
         if (lower.startsWith('project ') && lower.includes(' not found')) {
             await emitImmediateFailure('PROJECT_NOT_FOUND', message);
-            throw error;
+            return { error, retriable: false };
         }
         if (lower.includes('project domain not found')) {
             await emitImmediateFailure('DOMAIN_NOT_FOUND', message);
-            throw error;
+            return { error, retriable: false };
         }
         if (lower.includes('could not retrieve stage details') || lower.includes('system prompt not found')) {
             await emitImmediateFailure('STAGE_CONFIG_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Dependency/configuration problems
         if (lower.includes('affordability preflight') || lower.includes('token wallet service is required')) {
             await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
         if (lower.includes('promptassembler dependency is missing')) {
             await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
         if (lower.includes("dependency 'counttokens' is not provided") ||
             lower.includes("dependency 'callunifiedaimodel' is not provided") ||
             lower.includes('required services for prompt compression')) {
             await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
         if (lower.includes('could not fetch full provider details') ||
             lower.includes('failed to fetch valid provider details') ||
             lower.includes('has invalid or missing configuration')) {
             await emitImmediateFailure('PROVIDER_CONFIG_INVALID', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // Wallet/balance parsing issues
         if (lower.includes('could not parse wallet balance')) {
             await emitImmediateFailure('WALLET_BALANCE_INVALID', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         // File save failures
         if (lower.includes('failed to save contribution')) {
             await emitImmediateFailure('SAVE_FAILED', message);
-            throw error;
+            return { error, retriable: false };
         }
 
         if (prepareJobRetriable === false) {
             await emitImmediateFailure('INTERNAL_DEPENDENCY_MISSING', message);
-            throw error;
+            return { error, retriable: false };
         }
 
-        const failedAttempt: FailedAttemptError = {
-            modelId: model_id,
-            api_identifier: providerDetails?.api_identifier || 'unknown',
-            error: error.message,
-        };
-        ctx.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${currentAttempt + 1} failed for model ${model_id}: ${failedAttempt.error}`);
-        
-        if (currentAttempt < max_retries) {
-            await ctx.retryJob({ logger: ctx.logger, notificationService: ctx.notificationService }, dbClient, job, currentAttempt + 1, [failedAttempt], projectOwnerUserId);
-            return;
-        }
-
-        ctx.logger.error(`[dialectic-worker] [processSimpleJob] Final attempt failed for job ${jobId}. Exhausted all ${max_retries + 1} retries.`);
-        const modelProcessingResult: ModelProcessingResult = { modelId: model_id, status: 'failed', attempts: currentAttempt + 1, error: failedAttempt.error };
-        
-        const { error: finalUpdateError } = await dbClient
-            .from('dialectic_generation_jobs')
-            .update({
-                status: 'retry_loop_failed',
-                error_details: JSON.stringify({ finalError: failedAttempt, modelProcessingResult }),
-                completed_at: new Date().toISOString(),
-                attempt_count: currentAttempt + 1,
-            })
-            .eq('id', jobId);
-        
-        if (finalUpdateError) {
-            ctx.logger.error(`[dialectic-worker] [processSimpleJob] CRITICAL: Failed to mark job as 'retry_loop_failed'.`, { finalUpdateError });
-        }
-        
-        if (projectOwnerUserId) {
-            // User-facing notification (preserve existing behavior)
-            await ctx.notificationService.sendContributionFailedNotification({
-                type: 'contribution_generation_failed',
-                sessionId: job.payload.sessionId ?? 'unknown',
-                stageSlug: job.payload.stageSlug ?? 'unknown',
-                projectId: job.payload.projectId ?? '',
-                error: {
-                    code: 'RETRY_LOOP_FAILED',
-                    message: `Generation for stage '${job.payload.stageSlug}' has failed after all retry attempts.`,
-                },
-                job_id: jobId,
-            }, projectOwnerUserId);
-
-            // Internal event for UI placeholder transition to failed
-            await ctx.notificationService.sendContributionGenerationFailedEvent({
-                type: 'other_generation_failed',
-                sessionId: sessionId,
-                job_id: jobId,
-                error: {
-                    code: 'RETRY_LOOP_FAILED',
-                    message: failedAttempt.error,
-                },
-            }, projectOwnerUserId);
-
-            // Document-centric failure event on terminal failure
-            if (notificationDocumentKey) {
-                await ctx.notificationService.sendJobNotificationEvent({
-                    type: 'job_failed',
-                    sessionId: String(sessionId),
-                    stageSlug: String(stageSlug),
-                    job_id: jobId,
-                    step_key: stepKeyForNotification ?? 'unknown',
-                    document_key: notificationDocumentKey,
-                    modelId: model_id,
-                    iterationNumber: job.iteration_number,
-                    error: { code: 'RETRY_LOOP_FAILED', message: failedAttempt.error },
-                }, projectOwnerUserId);
-            }
-        }
-        return;
+        ctx.logger.warn(`[dialectic-worker] [processSimpleJob] Attempt ${currentAttempt + 1} failed for model ${job.payload.model_id}: ${error.message}`);
+        return { error, retriable: true };
     }
 }
 

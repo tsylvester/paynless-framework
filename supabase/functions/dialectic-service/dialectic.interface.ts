@@ -116,13 +116,13 @@ export type ProcessRenderJobReturn =
 export type ProcessSimpleJobFn = (
 	deps: IJobContext,
 	params: ProcessSimpleJobParams,
-	payload: ProcessSimpleJobPayload,
+	payload: unknown,
 ) => Promise<ProcessSimpleJobReturn>;
 
 export type ProcessComplexJobFn = (
 	deps: IPlanJobContext,
 	params: ProcessComplexJobParams,
-	payload: ProcessComplexJobPayload,
+	payload: unknown,
 ) => Promise<ProcessComplexJobReturn>;
 
 export type ProcessRenderJobFn = (

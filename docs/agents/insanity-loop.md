@@ -16,6 +16,10 @@ Discard all previous reasoning, explanations, assumptions, inferred motives, and
 
 The reset falls on the reasoning, never on the work. What the files hold and what the user said both stand — and are re-read rather than remembered (see [loop](loop.md)).
 
+***READ THE RULES, RIGHT NOW!*** [index.md](index.md)
+
+***OBEY THE RULES! ALWAYS! EVERY TURN! EVERY TOKEN OUTPUT! YOU CAN NOT PERFORM VALID WORK IF YOU VIOLATE A SINGLE RULE!*** 
+
 ## A correction is not a theory
 
 Treat the latest user correction literally. It is not evidence for a new theory. Use only facts established by the latest user instruction, the current repository state, the workplan, and the rules actually read.

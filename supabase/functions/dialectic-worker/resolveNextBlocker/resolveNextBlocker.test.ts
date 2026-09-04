@@ -4,11 +4,11 @@ import {
     assert,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
-import { Database } from '../types_db.ts';
-import { createMockSupabaseClient, MockQueryBuilderState, MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
+import { Database } from '../../types_db.ts';
+import { createMockSupabaseClient, MockQueryBuilderState, MockSupabaseClientSetup } from '../../_shared/supabase.mock.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { MockLogger } from '../_shared/logger.mock.ts';
-import { ILogger } from '../_shared/types.ts';
+import { MockLogger } from '../../_shared/logger.mock.ts';
+import { ILogger } from '../../_shared/types.ts';
 import {
     DialecticJobRow,
     DialecticRenderJobPayload,
@@ -19,10 +19,10 @@ import {
     ResolveNextBlockerDeps,
     ResolveNextBlockerParams,
     ResolveNextBlockerResult,
-} from '../dialectic-service/dialectic.interface.ts';
-import { DialecticStageSlug, FileType, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
-import { isJson } from '../_shared/utils/type_guards.ts';
-import { resolveNextBlocker } from './resolveNextBlocker.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
+import { DialecticStageSlug, FileType, ModelContributionFileTypes } from '../../_shared/types/file_manager.types.ts';
+import { isJson } from '../../_shared/utils/type_guards.ts';
+import { resolveNextBlocker } from '../resolveNextBlocker/resolveNextBlocker.ts';
 
 const PROJECT_ID = 'project-uuid-123';
 const SESSION_ID = 'session-uuid-456';

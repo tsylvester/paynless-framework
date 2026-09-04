@@ -1,28 +1,28 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { countTokens as countTokensAnthropic } from 'npm:@anthropic-ai/tokenizer@0.0.4';
 import { getEncoding as rawGetEncoding } from 'npm:js-tiktoken@1.0.7';
-import { Database, TablesUpdate } from '../types_db.ts';
+import { Database, TablesUpdate } from '../../types_db.ts';
 import {
   DialecticJobPayload,
   DialecticExecuteJobPayload,
   DialecticJobRow,
   DialecticPlanJobPayload,
   IJobProcessors,
-} from '../dialectic-service/dialectic.interface.ts';
-import type { DialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.interface.ts';
-import { isDialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.guard.ts';
-import type { ProcessCompressJobDeps, ProcessCompressJobParams } from './processCompressJob/processCompressJob.interface.ts';
-import { isProcessCompressJobErrorReturn } from './processCompressJob/processCompressJob.guard.ts';
-import type { BoundAssembleCompressionPromptFn } from '../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts';
-import type { BoundAssembleContinuationPromptFn } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
-import { renderPrompt } from '../_shared/prompt-renderer.ts';
-import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
-import { isKnownTiktokenEncoding } from '../_shared/utils/type-guards/type_guards.chat.ts';
-import { IJobContext, IPlanJobContext, IRenderJobContext } from './createJobContext/JobContext.interface.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
+import type { DialecticCompressJobPayload } from '../enqueueCompressJobs/enqueueCompressJobs.interface.ts';
+import { isDialecticCompressJobPayload } from '../enqueueCompressJobs/enqueueCompressJobs.guard.ts';
+import type { ProcessCompressJobDeps, ProcessCompressJobParams } from '../processCompressJob/processCompressJob.interface.ts';
+import { isProcessCompressJobErrorReturn } from '../processCompressJob/processCompressJob.guard.ts';
+import type { BoundAssembleCompressionPromptFn } from '../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts';
+import type { BoundAssembleContinuationPromptFn } from '../../_shared/prompt-assembler/prompt-assembler.interface.ts';
+import { renderPrompt } from '../../_shared/prompt-renderer.ts';
+import { constructStoragePath } from '../../_shared/utils/path_constructor.ts';
+import { isKnownTiktokenEncoding } from '../../_shared/utils/type-guards/type_guards.chat.ts';
+import { IJobContext, IPlanJobContext, IRenderJobContext } from '../createJobContext/JobContext.interface.ts';
 import {
   createPlanJobContext,
   createRenderJobContext,
-} from './createJobContext/createJobContext.ts';
+} from '../createJobContext/createJobContext.ts';
 
 // Narrow by row job_type only; router dispatches strictly by job.job_type
 function jobIsExecuteJob(

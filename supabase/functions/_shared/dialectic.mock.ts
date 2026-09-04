@@ -18,6 +18,7 @@ import type {
     GetProjectResourceContentResponse,
     DialecticStage,
     DialecticStageRecipeStep,
+    DialecticStageRecipeEdge,
     DialecticRecipeTemplateStep,
     SeedPromptRecipeStep,
     InputRule,
@@ -645,6 +646,21 @@ export function buildDialecticStageRecipeStep(
         branch_key: null,
         prompt_template_id: null,
         execution_order: 1,
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticStageRecipeEdgeOverrides = Partial<DialecticStageRecipeEdge>;
+
+export function buildDialecticStageRecipeEdge(
+    overrides?: DialecticStageRecipeEdgeOverrides,
+): DialecticStageRecipeEdge {
+    const base: DialecticStageRecipeEdge = {
+        id: 'a000000f-0000-4000-a000-00000000000f',
+        instance_id: 'a000000d-0000-4000-a000-00000000000d',
+        from_step_id: 'a000000e-0000-4000-a000-00000000000e',
+        to_step_id: 'a000000e-0000-4000-a000-00000000000e',
+        created_at: '2025-01-01T00:00:00.000Z',
     };
     return { ...base, ...overrides };
 }

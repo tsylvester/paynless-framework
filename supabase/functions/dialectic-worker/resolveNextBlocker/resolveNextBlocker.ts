@@ -5,13 +5,13 @@ import type {
     ResolveNextBlockerParams,
     ResolveNextBlockerResult,
     JobType,
-} from '../dialectic-service/dialectic.interface.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
 import {
     isDialecticRenderJobPayload,
     isDialecticExecuteJobPayload,
     isDialecticSkeletonJobPayload,
-} from '../_shared/utils/type-guards/type_guards.dialectic.ts';
-import { isRecord } from '../_shared/utils/type_guards.ts';
+} from '../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isRecord } from '../../_shared/utils/type_guards.ts';
 
 /**
  * Helper function to check if a job produces the specified documentKey.

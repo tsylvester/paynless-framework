@@ -10,7 +10,7 @@ import {
     assertRejects,
 } from 'jsr:@std/assert@0.225.3';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { Database } from '../types_db.ts';
+import { Database } from '../../types_db.ts';
 import {
     DialecticJobRow,
     DialecticPlanJobPayload,
@@ -22,27 +22,27 @@ import {
     DialecticProjectResourceRow,
     InputRule,
     DocumentRelationships,
-} from '../dialectic-service/dialectic.interface.ts';
-import type { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
-import { ILogger } from '../_shared/types.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
+import type { IPlanJobContext } from '../createJobContext/JobContext.interface.ts';
+import { ILogger } from '../../_shared/types.ts';
 import { planComplexStage } from './task_isolator.ts';
-import { findSourceDocuments } from './findSourceDocuments.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
-import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
-import { isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
-import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import { createPlanJobContext } from './createJobContext/createJobContext.ts';
-import { createMockRootContext } from './createJobContext/JobContext.mock.ts';
-import { isJson } from '../_shared/utils/type_guards.ts';
+import { findSourceDocuments } from '../findSourceDocuments.ts';
+import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
+import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
+import { DialecticStageSlug, FileType } from '../../_shared/types/file_manager.types.ts';
+import { DownloadStorageResult } from '../../_shared/supabase_storage_utils.ts';
+import { isDialecticExecuteJobPayload } from '../../_shared/utils/type_guards.ts';
+import { MockFileManagerService } from '../../_shared/services/file_manager.mock.ts';
+import { createPlanJobContext } from '../createJobContext/createJobContext.ts';
+import { createMockRootContext } from '../createJobContext/JobContext.mock.ts';
+import { isJson } from '../../_shared/utils/type_guards.ts';
 import {
     buildDialecticJobRow,
     buildDialecticPlanJobPayload,
     buildDialecticStageRecipeStep,
     buildSourceDocument,
     buildDialecticExecuteJobPayload,
-} from '../_shared/dialectic.mock.ts';
+} from '../../_shared/dialectic.mock.ts';
 
 describe('planComplexStage - Source Document Filtering', () => {
     // Filtering with completed IDs - doc1 and doc3 excluded, only doc2 passed

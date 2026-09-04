@@ -1,18 +1,18 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { Database } from '../types_db.ts';
-import { isRecord, isDialecticRenderJobPayload } from '../_shared/utils/type_guards.ts';
-import { IRenderJobContext } from './createJobContext/JobContext.interface.ts';
-import { RenderDocumentParams, RenderCompressedContextParams, DocumentRendererDeps } from '../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts';
-import { isFileType } from '../_shared/utils/type_guards.ts';
+import { Database } from '../../types_db.ts';
+import { isRecord, isDialecticRenderJobPayload } from '../../_shared/utils/type_guards.ts';
+import { IRenderJobContext } from '../createJobContext/JobContext.interface.ts';
+import { RenderDocumentParams, RenderCompressedContextParams, DocumentRendererDeps } from '../../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts';
+import { isFileType } from '../../_shared/utils/type_guards.ts';
 import { isString, isNumber } from "node:util";
 import type {
   RenderStartedPayload,
   RenderChunkCompletedPayload,
   JobFailedPayload,
-} from '../_shared/types/notification.service.types.ts';
-import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
-import { isDialecticRenderCompressedContextJobPayload, isCompressedRenderPayloadShape } from './enqueueRenderJob/enqueueRenderJob.guards.ts';
-import type { DialecticRenderCompressedContextJobPayload } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
+} from '../../_shared/types/notification.service.types.ts';
+import { isDialecticStageSlug } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isDialecticRenderCompressedContextJobPayload, isCompressedRenderPayloadShape } from '../enqueueRenderJob/enqueueRenderJob.guards.ts';
+import type { DialecticRenderCompressedContextJobPayload } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 export async function processRenderJob(
   dbClient: SupabaseClient<Database>,

@@ -2,33 +2,33 @@
 import { assert, assertEquals, assertStrictEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { Database } from '../types_db.ts';
-import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
-import { processJob } from './processJob.ts';
+import { Database } from '../../types_db.ts';
+import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
+import { processJob } from '../processJob/processJob.ts';
 import {
     DialecticJobPayload,
     DialecticJobRow,
     DialecticPlanJobPayload
-} from '../dialectic-service/dialectic.interface.ts';
-import { isJson } from '../_shared/utils/type_guards.ts';
-import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
+import { isJson } from '../../_shared/utils/type_guards.ts';
+import { createMockJobProcessors } from '../../_shared/dialectic.mock.ts';
 import {
     createJobContext,
     createPlanJobContext,
     createRenderJobContext
-} from './createJobContext/createJobContext.ts';
-import { IJobContext } from './createJobContext/JobContext.interface.ts';
-import { createMockJobContextParams, createMockRootContext } from './createJobContext/JobContext.mock.ts';
-import { buildDialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.mock.ts';
-import { createMockJobRow } from './saveResponse/saveResponse.mock.ts';
-import { ProcessCompressJobError, ProcessCompressJobReturn } from './processCompressJob/processCompressJob.interface.ts';
-import { isProcessCompressJobDeps } from './processCompressJob/processCompressJob.guard.ts';
+} from '../createJobContext/createJobContext.ts';
+import { IJobContext } from '../createJobContext/JobContext.interface.ts';
+import { createMockJobContextParams, createMockRootContext } from '../createJobContext/JobContext.mock.ts';
+import { buildDialecticCompressJobPayload } from '../enqueueCompressJobs/enqueueCompressJobs.mock.ts';
+import { createMockJobRow } from '../saveResponse/saveResponse.mock.ts';
+import { ProcessCompressJobError, ProcessCompressJobReturn } from '../processCompressJob/processCompressJob.interface.ts';
+import { isProcessCompressJobDeps } from '../processCompressJob/processCompressJob.guard.ts';
 import {
     buildAssembleCompressionPromptParams,
     buildAssembleCompressionPromptPayload,
-} from '../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.mock.ts';
-import { buildIPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
-import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
+} from '../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.mock.ts';
+import { buildIPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import type { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
