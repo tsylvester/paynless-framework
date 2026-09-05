@@ -968,7 +968,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   A malformed payload surfaces its own arm guard's per-member diagnostic on the error arm, for each arm — unit test.
       * `[✅]`   Every tier-cap, provider-config, document, wallet and enqueue failure returns exactly what it returns now — unit test and inputsRequired test, existing cases unchanged.
 
-* `[✅]`   supabase/functions/dialectic-worker/processCompressJob/processCompressJob.ts **[BE] Compose a `PromptConstructionPayload` from the assembled prompt and call `prepareModelJob`; move `job` to payload, eliminate `projectOwnerUserId` (KVP dup of `job.user_id`), own no part of the model call, narrow `isDialecticCompressJobPayload` on entry, and narrow both assembly unions before use**
+* `[✅]`   supabase/functions/dialectic-worker/processCompressJob/processCompressJob.ts **[BE] Compose a `PromptConstructionPayload` from the assembled prompt and call `prepareModelJob`; move `job` to payload, eliminate `projectOwnerUserId` (KVP dup of `job.user_id`), own no part of the model call, take the validating form on entry, and narrow both assembly unions before use**
 
    * `[✅]`   `objective`
       * `[✅]`   Solve a second model-call path. This function validates the provider config, extracts the input and output windows, counts preflight tokens, builds a `ChatApiRequest`, a `UserConfig` and `EnqueueModelCallParams`, writes the prompt's resource id onto the job row, and calls `enqueueModelCall` itself — so a COMPRESS call reaches the model without the tier cap, the wallet read or the affordability preflight every EXECUTE call passes, and its window check is a bespoke subtraction rather than decision one's recursion guard.
@@ -1042,6 +1042,8 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[✅]`   From the enqueue module: the `DialecticCompressJobPayload` type and its guard only.
 
    * `[✅]`   `processCompressJob.interface.test.ts`
+      * `[✅]`   The block proving the payload slot through `Parameters<ProcessCompressJobFn>[2]`, and any block proving it through `Parameters<BoundProcessCompressJobFn>[1]`, are deleted. Both slots are `unknown` and admit everything, so an assignment to either proves nothing.
+      * `[✅]`   `ProcessCompressJobPayload` keeps its required-key surface record, annotated with the exported symbol. It is the guard's narrowing target and is proven by name, not through the function type.
       * `[✅]`   The deps key case declares `assembleCompressionPrompt`, `assembleContinuationPrompt`, `prepareModelJob`, `constructStoragePath` and `logger` and asserts five — exhaustive in both directions, it is the proof the four model-call members are gone.
       * `[✅]`   The params key case declares `dbClient` and asserts one — exhaustive in both directions, it is the proof `job`, `projectOwnerUserId` and `authToken` are gone.
       * `[✅]`   The payload key case declares `job` and asserts one, proving `ProcessCompressJobPayload` is no longer an alias and `job` is its only member.
@@ -1049,6 +1051,8 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   The return-union cases and the signature cases are unchanged.
 
    * `[✅]`   `processCompressJob.interface.ts`
+      * `[✅]`   `ProcessCompressJobFn` declares `payload: unknown`, and `BoundProcessCompressJobFn` declares `payload: unknown` in the same slot. The job payload reaches this processor from the `dialectic_generation_jobs` payload column, which is data from outside the type system, so the entry annotation is `unknown` and the type is proven at entry rather than assumed.
+      * `[✅]`   `ProcessCompressJobPayload` is unchanged and keeps its `job: DialecticJobRow` member. It is not retired by the `unknown` slot; it is the guard's narrowing target and the type the whole body runs on.
       * `[✅]`   `ProcessCompressJobDeps` drops `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic`, gains `prepareModelJob: BoundPrepareModelJobFn`, and keeps `assembleCompressionPrompt`, `assembleContinuationPrompt`, `constructStoragePath` and `logger`. The `BoundEnqueueModelCallFn`, `CountTokensFn` and `CountTokensDeps` imports go with the members.
       * `[✅]`   `ProcessCompressJobParams` drops `job`, `projectOwnerUserId` and `authToken`; declares `dbClient` only. `job` is a data object that belongs in payload; `projectOwnerUserId` is a KVP duplicate of `job.user_id`; `authToken` is retired. The `DialecticJobRow` import moves to the payload type.
       * `[✅]`   `ProcessCompressJobPayload` is no longer a type alias of `DialecticCompressJobPayload`. It becomes an interface declaring `job: DialecticJobRow` as its only member. The `DialecticCompressJobPayload` import stays for use in the implementation's narrowing guard.
@@ -1072,18 +1076,23 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   One function mock per owned function type: `mockProcessCompressJob: ProcessCompressJobFn` and `mockBoundProcessCompressJob: BoundProcessCompressJobFn`, each returning `buildProcessCompressJobSuccessReturn()`, with no options bag and no call recording.
 
    * `[✅]`   `processCompressJob.guard.test.ts`
+      * `[✅]`   New case: `isProcessCompressJobPayload` rejects a `job` that is a record but not a `DialecticJobRow`, arranged from `invalidateDialecticJobRow` so the rejection comes from a real corruption and not a hand-rolled object.
+      * `[✅]`   New case: `isProcessCompressJobPayload` accepts `buildProcessCompressJobPayload()`, arranged beside the rejection above so the strengthened check cannot be satisfied by rejecting everything.
       * `[✅]`   `isProcessCompressJobDeps` case checklist over the five surviving members, each absent and each wrong-typed, fixtures from the invalidator; a case asserts a deps object carrying none of the four removed members is accepted.
       * `[✅]`   `isProcessCompressJobParams` case checklist over the one surviving member (`dbClient`), each absent and each wrong-typed; a case asserts params carrying none of the three retired members (`job`, `projectOwnerUserId`, `authToken`) are accepted.
       * `[✅]`   `isProcessCompressJobPayload` case checklist over the one member (`job`), absent and wrong-typed; a case asserts a payload with a valid `job` record is accepted.
       * `[✅]`   The `isProcessCompressJobSuccessReturn`, `isProcessCompressJobErrorReturn`, `isProcessCompressJobReturn`, `isProcessCompressJobFn` and `isBoundProcessCompressJobFn` cases keep their coverage and their boolean assertions.
 
    * `[✅]`   `processCompressJob.guard.ts`
+      * `[✅]`   `isProcessCompressJobPayload` delegates `job` to `isDialecticJobRow` in place of the `isRecord(value.job)` test it makes today. `DialecticJobRow` has structure, and a record check where the type has structure admits every object with a `job` key.
       * `[✅]`   `isProcessCompressJobDeps` drops its `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic` checks and gains a presence-and-function check for `prepareModelJob`.
       * `[✅]`   `isProcessCompressJobParams` drops its `job`, `projectOwnerUserId` and `authToken` checks, keeping only `dbClient`.
       * `[✅]`   `isProcessCompressJobPayload` checks that the value is a record with a `job` property that is itself a record. It no longer delegates to `isDialecticCompressJobPayload`; that narrowing happens inside the function body where the enclosing `try` converts the throw to the error arm.
       * `[✅]`   Every other guard in the file is unchanged.
 
    * `[✅]`   `processCompressJob.test.ts`
+      * `[✅]`   New case: a payload that is not a `ProcessCompressJobPayload` returns the error arm with `retriable: false`, calls no dependency and writes no row, arranged from `invalidateProcessCompressJobPayload`.
+      * `[✅]`   New case: a payload whose `job.payload` fails `isDialecticCompressJobPayload` returns the error arm with `retriable: false`, arranged beside the case above so the two entry rejections cannot collapse into one branch.
       * `[✅]`   Every case builds deps without the four removed members, params with only `dbClient`, and payload with `{ job }` where `job` carries a `DialecticCompressJobPayload`-shaped `payload` field. The `DialecticCompressJobPayload` content that was passed directly as the function's payload is now on `payload.job.payload`.
       * `[✅]`   The cases asserting `enqueueParams["output_type"]`, the provider-config validations, the `provider_max_input_tokens`/`provider_max_output_tokens` checks, the preflight token count and the budget-exceeded error are deleted with the branches they cover; the responsibilities they asserted now belong to `prepareModelJob`'s suite, where its own cases prove the cap, the wallet, the preflight and the recursion guard. The provider-lookup cases stand — the query-error and provider-not-found cases keep their messages and flags.
       * `[✅]`   New case: a fitting job reaches `deps.prepareModelJob` exactly once with params `{ dbClient: params.dbClient }` and payload `{ job: payload.job, providerRow, promptConstructionPayload }`, the `providerRow` being the one the `ai_providers` stub returned, and the `promptConstructionPayload` carrying the assembled `promptContent` as `currentUserPrompt`, the assembled id as `source_prompt_resource_id`, and empty history and documents — and returns `{ queued: true }`.
@@ -1096,6 +1105,9 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   New case: a `payload.job.payload` failing `isDialecticCompressJobPayload` surfaces that guard's per-member diagnostic on the error arm.
 
    * `[✅]`   `processCompressJob.ts`
+      * `[✅]`   `isProcessCompressJobPayload(payload)` is the first statement of the body, ahead of the existing `isDialecticCompressJobPayload` narrowing; its `false` branch returns `{ error: new ProcessCompressJobError(…), retriable: false }`. The two guards prove different things — the first the payload wrapper this function declares, the second the row's payload column — and neither replaces the other.
+      * `[✅]`   `payload.job` is bound after the entry guard and every later `payload.job` read is taken from it. The existing `compressPayload` narrowing, its `try`/`catch` and its error arm are unchanged.
+      * `[✅]`   `isProcessCompressJobPayload` is imported from `./processCompressJob.guard.ts`; every other import in the file stands.
       * `[✅]`   Entry: `isDialecticCompressJobPayload(payload.job.payload)` narrows the job's payload content; the throw surfaces a per-member diagnostic, converted to the error arm by the enclosing `try`. The narrowed value is held as a local for all content reads.
       * `[✅]`   All reads of `payload.xyz` for content fields (`sessionId`, `projectId`, `model_id`, `stageSlug`, `output_type`, `sourceType`, `mode`, `content`, `continuation_count`, `model_slug`, `chunk_index`, `chunk_total`, `documentKey`, `sourceId`, `role`) become reads of the narrowed local. All reads of `params.job` become `payload.job`. `params.projectOwnerUserId` is eliminated; `payload.job.user_id` replaces any read.
       * `[✅]`   Step two keeps its `ai_providers` read (by the narrowed content's `model_id`) and both row outcomes; its `isAiModelExtendedConfig` validation, the two `provider_max_*` checks and the two window extractions are deleted, with the `isAiModelExtendedConfig` import and the `AiModelExtendedConfig` type. The row itself is held for the dispatcher.
@@ -1117,7 +1129,10 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   The `enqueueModelCall` edge is replaced by the `prepareModelJob` edge, one layer up the same path, so the module graph gains no new direction.
       * `[✅]`   The `isDialecticCompressJobPayload` guard import is new to this file but not new to the graph: `processJob` already imported it, and this function's own guard delegated to it. The narrowing responsibility moves inward, from the caller's guard to the function's own body.
       * `[✅]`   No cycle: `prepareModelJob` imports nothing from this module, and `processJob` constructs this function's deps rather than being imported by it.
-      * `[✅]`   This module has no `provides` barrel; `processJob` imports its interface, guard and implementation directly, as it does now.
+      * `[✅]`   `processJob` reaches every symbol this module publishes through `processCompressJob.provides.ts` and no longer imports its interface, guard or implementation directly.
+
+   * `[✅]`   `processCompressJob.provides.ts`
+      * `[✅]`   Re-export `*` barrel for `processCompressJob.ts`, `processCompressJob.interface.ts`, `processCompressJob.guard.ts` and `processCompressJob.mock.ts`.
 
    * `[✅]`   `requirements`
       * `[✅]`   `ProcessCompressJobDeps` declares five members with the four model-call members absent — interface test, exhaustive key record.
@@ -1130,6 +1145,10 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   A dispatcher deferral returns a non-retriable error rather than success — unit test.
       * `[✅]`   A malformed `payload.job.payload` surfaces `isDialecticCompressJobPayload`'s per-member diagnostic on the error arm — unit test.
       * `[✅]`   Every provider-lookup, stage, instance, step and `outputs_required` failure returns exactly what it returns now — unit test, existing cases unchanged.
+      * `[✅]`   `ProcessCompressJobFn` and `BoundProcessCompressJobFn` each declare `payload: unknown`, and the body proves it with `isProcessCompressJobPayload` before any `payload.job` read — proven by the compiler and by the rejection case.
+      * `[✅]`   `isProcessCompressJobPayload` rejects a `job` that is a record but not a `DialecticJobRow`, and accepts the builder's default — guard test, both cases in one file.
+      * `[✅]`   A payload the entry guard rejects and a `job.payload` the compress guard rejects each return the error arm with `retriable: false`, and the two are distinct branches — unit test, both cases in one file.
+      * `[✅]`   Every consumer reaches this module through `processCompressJob.provides.ts`, and no file outside the module imports one of its internal files — proven by the compiler.
 
 * `[✅]`   supabase/functions/dialectic-worker/retryJob/retryJob.ts **[BE] Advance `attempt_count` to the row's value plus one, the increment this module owns and no caller can supply**
 
@@ -1911,6 +1930,264 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   `deps.getRecipeStep` receives the skeleton's own `recipe_step_id` — unit test, captured-argument assertion.
       * `[ ]`   No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
 
+* `[ ]`   supabase/functions/dialectic-worker/planComplexStage/planComplexStage.ts **[BE] Canonize the stage planner as a module owning its whole contract: take the canonical `(deps, params, payload)` shape, prove the payload on entry, name the two unions the body composes inline, surface every failure on the error arm instead of throwing or skipping, and leave the registry it was never dispatched through**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve a planner that reports nothing and throws everything. It takes six positional parameters, returns a bare `DialecticJobRow[]`, and leaves by throwing on eleven distinct failures — a non-plannable step, four missing recipe properties, a deprecated property, a missing or mismatched stage slug, a missing source-document identifier, a missing planner for the strategy, and a planner that returned a non-array. The one caller reads a length and has no way to tell an empty plan from a failed one.
+      * `[ ]`   Solve two silent drops. A planner payload whose project, session, stage, iteration or wallet disagrees with the parent is skipped with a warn and a `continue`, and the `try` around each row construction catches the `isJson` failure and the `stageSlug` failure and skips that payload too. Both leave the caller with fewer children than the planner produced, and the caller sets the parent `waiting_for_children` from the inserted count — so a dropped payload strands a parent waiting on a child that was never created.
+      * `[ ]`   Solve four inline unions and a hand-rolled shape test. `isPlannableStep` declares its type predicate as an inline union; `childJobPayloads` and `validatedPayload` each annotate the same inline union a second and third time; `jobType` annotates a two-member string-literal union; and the execute arm is selected by four `in` tests inlining the structure of a payload another interface owns.
+      * `[ ]`   Solve a required member read through a property descriptor. `parentJob.payload.user_jwt` is a required member of `DialecticBaseJobPayload`, and the body reaches it through `Object.getOwnPropertyDescriptor` to prove it is a non-empty string, then never reads it again — passing the positional `authToken` to the planner instead.
+      * `[ ]`   Solve a module with no contract of its own: `PlanComplexStageFn` sits in the service-layer interface, and no guard, mock or provides exists.
+      * `[ ]`   Solve a registry membership with no caller. `IJobProcessors.planComplexStage` is supplied by an adapter closure at the worker root and spied in the shared mock, and no code anywhere invokes it. Every call to this function in the repository is `ctx.planComplexStage` from `processComplexJob`, through `IPlanJobContext`, which is where a plan-job collaborator belongs; `processJob` dispatches four arms matching four `job_type` values and this function is not one of them.
+      * `[ ]`   Functional goals:
+         * `[ ]`   The module owns its interface, interface test, mock, guard, guard test and provides beside the implementation and the three suites already in the folder. Consumers reach every symbol through `planComplexStage.provides.ts`.
+         * `[ ]`   The function is declared `export const planComplexStage: PlanComplexStageFn = async (deps, params, payload) => { … }`, its parameter types inferred from that annotation, returning `Promise<PlanComplexStageReturn>`.
+         * `[ ]`   `PlanComplexStageFn` declares `payload: unknown`, and `isPlanComplexStagePayload(payload)` is the first statement of the body; its `false` return produces the error arm.
+         * `[ ]`   `deps` is `IPlanJobContext`; `params` carries `dbClient` and `completedSourceDocumentIds`; `payload` carries `parentJob` and `recipeStep`. The `authToken` parameter is deleted and the planner receives `payload.parentJob.payload.user_jwt`, the member the body already proves.
+         * `[ ]`   Every one of the eleven failures returns `{ error, retriable: false }` in place of its throw. Each is a fact about the recipe row, the parent row or the planner's output that a later attempt would meet again.
+         * `[ ]`   A planner payload whose context disagrees with the parent returns the error arm naming the mismatched fields, and a payload failing `isJson` returns the error arm. Neither is skipped, and the `try`/`catch` around the row construction is deleted with the `continue` it held.
+         * `[ ]`   The success arm carries `childJobs`, an array that is empty when no source documents were found and when the planner produced none. The caller reads its length, exactly as it does today.
+         * `[ ]`   `jobType` and `validatedPayload` do not exist. The selector chooses an arm, each branch holds one proven concrete payload, narrows it to `Json`, and hands that `Json` and its own literal `job_type` to one row construction.
+         * `[ ]`   `IJobProcessors` no longer declares `planComplexStage`, and `IPlanJobContext` carries it as this module's `PlanComplexStageFn`.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   The source-group filter is unchanged: when the parent payload carries a non-empty `document_relationships.source_group`, documents are filtered to that group, sorted by `updated_at` then `created_at` descending, and `sourceDocuments` becomes the single most recent match. Collapsing many matches to one is this function's lineage selection, not an incidental narrowing.
+         * `[ ]`   The no-match branch is unchanged: when the parent carries a source group and no document matches it, the existing warn is logged and planning proceeds with every document.
+         * `[ ]`   The completed-document filter is unchanged in condition and effect, and a `null` identifier from `extractSourceDocumentIdentifier` remains a hard failure rather than a skipped document.
+         * `[ ]`   `deps.getGranularityPlanner(recipeStep.granularity_strategy)` is called exactly where it is called now, and the planner receives the same four arguments in the same order.
+         * `[ ]`   Every constructed child row keeps its member set and its values, including `attempt_count: 0`, `status: 'pending'`, the two `crypto.randomUUID()` calls, `stage_slug` from the validated stage slug, and `is_test_job` defaulting from the parent row.
+         * `[ ]`   The two live log lines reading `[task_isolator]` become `[planComplexStage]`; every other log line keeps its level, its text and its position.
+      * `[ ]`   Each goal is proven by a named case in this module's interface, guard or behavioral suites.
+
+   * `[ ]`   `role`
+      * `[ ]`   App-layer planning of one recipe step: prove the payload, gather the step's source documents, narrow them to the parent's lineage and to what is not already complete, delegate to the granularity planner the step names, validate each payload it returns against the parent's context, and report the child rows to insert.
+      * `[ ]`   The role is correct because this function decides what work a step becomes — which documents feed it and how many children it produces. It does not insert those rows, and it does not decide what a caller does with an empty plan.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not insert child jobs, write any row, or set any parent status.
+         * `[ ]`   Do not change which documents the source-group filter selects, or the recency ordering that selects among them.
+         * `[ ]`   Do not change any granularity planner, or the four arguments one receives.
+         * `[ ]`   Do not declare `IPlanJobContext`; it belongs to `createJobContext` and is imported from there as this function's deps slot.
+         * `[ ]`   Do not declare `DialecticExecuteJobPayload`, `DialecticPlanJobPayload`, `DialecticRecipeStep` or `SourceDocument`; each is imported from the interface that owns it.
+         * `[ ]`   Do not edit `processComplexJob`, `processJob` or `dialectic-worker/index.ts`; each has its own node.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `dialectic-worker/planComplexStage/` — one recipe step's pass from payload proof through document selection and planner delegation to the child rows it reports, and the contract that report satisfies.
+      * `[ ]`   Inside boundary: this function's deps, params, payload and return arms, and every guard and mock for them; which source documents a step plans over; which planner payloads are admitted; what each child row carries.
+      * `[ ]`   Outside boundary: inserting the rows and setting the parent's state, both `processComplexJob`'s; the granularity planners and the strategy map, reached through `deps.getGranularityPlanner`; `PlannedChildPayload`, declared with the planner contract that returns it; `IPlanJobContext`, `createJobContext`'s.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `../createJobContext/JobContext.interface.ts` (`IPlanJobContext`), which becomes this function's declared deps slot rather than its third positional parameter.
+         * `[ ]`   Layer classification: worker-layer context contract, constructed at the composition root.
+         * `[ ]`   Direction: inbound; this file already takes `ctx: IPlanJobContext`, so no new direction is opened.
+         * `[ ]`   Purpose: the logger, the source-document reader and the granularity-planner lookup this body invokes.
+      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` — `DialecticJobRow`, `DialecticPlanJobPayload`, `DialecticExecuteJobPayload`, `DialecticRecipeStep`, `DialecticStageRecipeStep`, `DialecticRecipeTemplateStep`, `SourceDocument` and `PlannedChildPayload`.
+         * `[ ]`   Layer classification: service-layer contract surface.
+         * `[ ]`   Direction: inbound; that file declares no `PlanComplexStage*` symbol after this node.
+         * `[ ]`   Purpose: the row, payload, recipe-step and document types this module's contract composes, and the planner's own return type.
+      * `[ ]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticJobRow`, `isDialecticExecuteJobPayload`, `isDialecticPlanJobPayload`, `isDialecticExecuteShapedPayload`).
+         * `[ ]`   Layer classification: shared guard package, owner of the payload family.
+         * `[ ]`   Direction: inbound; the import path moves to the package that exports them, replacing the `_shared/utils/type_guards.ts` path this file uses today.
+         * `[ ]`   Purpose: prove the parent row, select the execute arm of a planner payload with a non-throwing predicate, and prove whichever arm was selected.
+      * `[ ]`   Provider: `_shared/utils/source_document_identifier.ts` (`extractSourceDocumentIdentifier`) and `_shared/utils/type-guards/type_guards.common.ts` (`isJson`), both unchanged.
+         * `[ ]`   Layer classification: shared utilities.
+         * `[ ]`   Direction: inbound; already imported.
+         * `[ ]`   Purpose: identify a source document for the completed filter, and prove a payload is storable in the row's `Json` column.
+      * `[ ]`   Confirm:
+         * `[ ]`   `IPlanJobContext` gains no member and loses none; its `planComplexStage` member is retyped to this module's `PlanComplexStageFn` and nothing else about it changes.
+         * `[ ]`   `deps` is typed strong and is never guarded at function entry; only `payload` is proven.
+         * `[ ]`   No reverse dependency: `createJobContext`, `processComplexJob`, the guard package and every granularity planner import nothing from this module.
+      * `[ ]`   `context_slice`
+         * `[ ]`   From `deps`: `logger`, `findSourceDocuments` and `getGranularityPlanner` — the three members this body reads.
+
+   * `[ ]`   planComplexStage/`planComplexStage.interface.test.ts`
+      * `[ ]`   Prove `PlanComplexStageParams`, `PlanComplexStagePayload` and `PlanComplexStageSuccessReturn` by their required-key surface records, each annotated with the exported symbol, and `PlanComplexStageParams`'s `completedSourceDocumentIds` absent and present each accepted.
+      * `[ ]`   Prove `PlanComplexStageSuccessReturn` and `PlanComplexStageErrorReturn` as arms of `PlanComplexStageReturn` by typed assignment.
+      * `[ ]`   Prove `PlannableRecipeStep` by membership: a `DialecticStageRecipeStep` and a `DialecticRecipeTemplateStep` are each assignable to it, and it is assignable to `DialecticRecipeStep`.
+      * `[ ]`   Prove `PlanComplexStageFn`'s declared return in the async form: `ReturnType<PlanComplexStageFn>` admits `Promise<PlanComplexStageReturn>`. No block proves a payload contract through `Parameters<PlanComplexStageFn>[2]`; that slot is `unknown` and admits everything.
+      * `[ ]`   Report the enumeration: every symbol `planComplexStage.interface.ts` exports, and the block proving each, in both directions.
+
+   * `[ ]`   supabase/functions/dialectic-service/`dialectic.interface.ts`
+      * `[ ]`   Declare `PlannedChildPayload` as `DialecticExecuteJobPayload | DialecticPlanJobPayload`, beside `GranularityPlannerFn`, and change that type's return to `PlannedChildPayload[]`. The union it states inline today is the same union, so every planner implementing `GranularityPlannerFn` compiles unchanged.
+
+   * `[ ]`   planComplexStage/`planComplexStage.interface.ts`
+      * `[ ]`   Declare `PlannableRecipeStep` as `DialecticStageRecipeStep | DialecticRecipeTemplateStep`, the two members of `DialecticRecipeStep` this function plans over. `SeedPromptRecipeStep` is the member it excludes.
+      * `[ ]`   Declare `PlanComplexStageParams` with `dbClient: SupabaseClient<Database>` and `completedSourceDocumentIds?: Set<string>`.
+      * `[ ]`   Declare `PlanComplexStagePayload` with `parentJob: DialecticJobRow & { payload: DialecticPlanJobPayload }` and `recipeStep: DialecticRecipeStep`.
+      * `[ ]`   Declare `PlanComplexStageSuccessReturn` as `{ childJobs: DialecticJobRow[] }`, `PlanComplexStageErrorReturn` as `{ error: Error; retriable: boolean }`, and `PlanComplexStageReturn` as their two-arm union.
+      * `[ ]`   Declare `PlanComplexStageFn` as `(deps: IPlanJobContext, params: PlanComplexStageParams, payload: unknown) => Promise<PlanComplexStageReturn>`.
+
+   * `[ ]`   `planComplexStage.interaction.spec`
+      * `[ ]`   Branch: the payload is not a `PlanComplexStagePayload`.
+         * `[ ]`   Condition: the entry guard returns `false`.
+         * `[ ]`   Decision: `isPlanComplexStagePayload(payload)`.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error, retriable: false }`.
+      * `[ ]`   Branch: the recipe step is not one this function plans over.
+         * `[ ]`   Condition: the step is skipped, or its `job_type` is none of `PLAN`, `EXECUTE`, `RENDER`.
+         * `[ ]`   Decision: `isPlannableRecipeStep(payload.recipeStep)`.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error: new Error("planComplexStage cannot process this type of recipe step. This indicates an orchestration logic error."), retriable: false }`.
+      * `[ ]`   Branch: a required recipe property is absent or deprecated.
+         * `[ ]`   Condition: `inputs_required` absent or empty; `granularity_strategy` absent; a `step` property present; `prompt_template_id` absent.
+         * `[ ]`   Decision: the four existing checks, in the order they stand.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error, retriable: false }` carrying that check's existing message.
+      * `[ ]`   Branch: the parent's stage slug is absent or disagrees with its row.
+         * `[ ]`   Condition: `payload.parentJob.payload.stageSlug` is absent, or the row's `stage_slug` is a string and differs from it.
+         * `[ ]`   Decision: the two existing comparisons, read off the proven payload.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error, retriable: false }` carrying that check's existing message. The `Object.getOwnPropertyDescriptor` block proving `user_jwt` is deleted; the entry guard proves it.
+      * `[ ]`   Branch: no source documents are found.
+         * `[ ]`   Condition: `deps.findSourceDocuments` returns an empty array.
+         * `[ ]`   Decision: a length check.
+         * `[ ]`   Dependency call: `deps.logger.info` with the existing inputs-required line, then `deps.findSourceDocuments(params.dbClient, payload.parentJob, recipeStep.inputs_required)`.
+         * `[ ]`   Outcome: `{ childJobs: [] }`.
+      * `[ ]`   Branch: the parent carries a source group and documents match it.
+         * `[ ]`   Condition: `document_relationships.source_group` is a non-empty string and at least one document carries the same group.
+         * `[ ]`   Decision: the existing filter, then the existing `updated_at`-then-`created_at` descending sort.
+         * `[ ]`   Dependency call: `deps.logger.info` with the existing filtered line.
+         * `[ ]`   Outcome: the working set becomes the single most recent matching document; planning continues.
+      * `[ ]`   Branch: the parent carries a source group and no document matches.
+         * `[ ]`   Condition: the filter yields nothing.
+         * `[ ]`   Decision: the same filter, empty.
+         * `[ ]`   Dependency call: `deps.logger.warn` with the existing line.
+         * `[ ]`   Outcome: the working set is unchanged and planning continues over every document.
+      * `[ ]`   Branch: a source document has no identifier.
+         * `[ ]`   Condition: `extractSourceDocumentIdentifier` returns `null` while the completed filter is running.
+         * `[ ]`   Decision: a null check.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error, retriable: false }`. The document is not skipped.
+      * `[ ]`   Branch: completed documents are filtered out.
+         * `[ ]`   Condition: `params.completedSourceDocumentIds` is present and non-empty.
+         * `[ ]`   Decision: set membership on each document's identifier.
+         * `[ ]`   Dependency call: `deps.logger.info` with the existing filtered-documents line.
+         * `[ ]`   Outcome: the working set loses every completed document; planning continues.
+      * `[ ]`   Branch: no planner exists for the step's strategy.
+         * `[ ]`   Condition: `deps.getGranularityPlanner` returns nothing.
+         * `[ ]`   Decision: a truthiness check on the returned planner.
+         * `[ ]`   Dependency call: `deps.getGranularityPlanner(recipeStep.granularity_strategy)`.
+         * `[ ]`   Outcome: `{ error: new Error("No planner found for granularity strategy: <strategy>"), retriable: false }`.
+      * `[ ]`   Branch: the planner returns a non-array.
+         * `[ ]`   Condition: the planner's return is not an array.
+         * `[ ]`   Decision: `Array.isArray`.
+         * `[ ]`   Dependency call: `planner(sourceDocuments, payload.parentJob, recipeStep, payload.parentJob.payload.user_jwt)`.
+         * `[ ]`   Outcome: `{ error: new Error("Planner for strategy '<strategy>' returned a non-array value."), retriable: false }`.
+      * `[ ]`   Branch: a planner payload is execute-shaped.
+         * `[ ]`   Condition: the payload carries the execute discriminating members.
+         * `[ ]`   Decision: `isDialecticExecuteShapedPayload(payload)`, a non-throwing selector, then `isDialecticExecuteJobPayload` proving the arm.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: the branch holds a proven `DialecticExecuteJobPayload` and its literal `job_type` is `'EXECUTE'`. A payload the selector chose and the guard rejected returns `{ error, retriable: false }` carrying the guard's own diagnostic.
+      * `[ ]`   Branch: a planner payload is plan-shaped.
+         * `[ ]`   Condition: the selector did not choose the execute arm.
+         * `[ ]`   Decision: `isDialecticPlanJobPayload(payload)`.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: the branch holds a proven `DialecticPlanJobPayload` and its literal `job_type` is `'PLAN'`. A payload neither arm admits returns `{ error, retriable: false }` carrying the existing malformed-payload message.
+      * `[ ]`   Branch: a planner payload disagrees with the parent's context.
+         * `[ ]`   Condition: any of `projectId`, `sessionId`, `stageSlug`, `iterationNumber` or `walletId` differs from the parent payload's.
+         * `[ ]`   Decision: the five existing comparisons, collecting the mismatched field names.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error, retriable: false }` naming the mismatched fields. The payload is not skipped and planning does not continue past it.
+      * `[ ]`   Branch: a validated payload is not storable.
+         * `[ ]`   Condition: `isJson` rejects it.
+         * `[ ]`   Decision: `isJson(<the proven payload>)`.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ error: new Error("FATAL: Constructed child job payload is not a valid JSON object."), retriable: false }`.
+      * `[ ]`   Branch: every planner payload is admitted.
+         * `[ ]`   Condition: each payload passed its arm guard, its context check and `isJson`.
+         * `[ ]`   Decision: none.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: `{ childJobs }`, one row per admitted payload, each carrying the member set the current construction writes.
+      * `[ ]`   Ordering and side effects: exactly one `findSourceDocuments` call and at most one planner call per invocation; the source-group filter precedes the completed filter and both precede the planner call; no row is written and no job is inserted on any path; every path leaves the function by returning a member of the union, and nothing leaves it by throwing.
+
+   * `[ ]`   planComplexStage/`planComplexStage.mock.ts`
+      * `[ ]`   The four symbols for each owned object type: `PlanComplexStageParams`, `PlanComplexStagePayload`, `PlanComplexStageSuccessReturn` and `PlanComplexStageErrorReturn`.
+      * `[ ]`   `buildPlanComplexStagePayload` composes `buildDialecticJobRow` with `buildDialecticPlanJobPayload` for `parentJob`, and a built `DialecticStageRecipeStep` for `recipeStep`. `buildPlanComplexStageParams` omits `completedSourceDocumentIds`, that member being optional.
+      * `[ ]`   `mockPlanComplexStage: PlanComplexStageFn`, returning `buildPlanComplexStageSuccessReturn()` with an empty `childJobs` array — identical signature, no options bag, no recording.
+      * `[ ]`   `PlanComplexStageReturn` and `PlannableRecipeStep` take no builder of their own; each member of the first has one, and the second is used by its production values.
+
+   * `[ ]`   supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.test.ts`
+      * `[ ]`   A case checklist for `isDialecticExecuteShapedPayload`: a built `DialecticExecuteJobPayload` is selected; a built `DialecticPlanJobPayload` is not; `null`, `undefined`, a primitive and an array are not; and a record carrying only some of the discriminating members is not.
+      * `[ ]`   A case proves the selector returns a boolean and throws nothing, for a payload that would make `isDialecticExecuteJobPayload` throw.
+      * `[ ]`   Every existing case in this file keeps its arrangement and its assertions.
+
+   * `[ ]`   supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.ts`
+      * `[ ]`   Add `isDialecticExecuteShapedPayload`, a non-throwing structural predicate returning a boolean: a record carrying `prompt_template_id`, `output_type`, `canonicalPathParams` and `inputs`. It answers which arm a payload is shaped like and proves no type; `isDialecticExecuteJobPayload` proves the type after it.
+      * `[ ]`   Every existing guard in this file is unchanged.
+
+   * `[ ]`   planComplexStage/`planComplexStage.guard.test.ts`
+      * `[ ]`   Prove `isPlanComplexStageParams`, `isPlanComplexStagePayload`, `isPlannableRecipeStep`, `isPlanComplexStageSuccessReturn` and `isPlanComplexStageErrorReturn` against the case checklist, fixtures drawn from this module's builders and invalidators.
+      * `[ ]`   A case proves `isPlanComplexStageParams` accepts params with `completedSourceDocumentIds` absent and with it present, and rejects it present but corrupted.
+      * `[ ]`   A case proves `isPlannableRecipeStep` rejects a skipped step and a step whose `job_type` is none of the three admitted values, and accepts one of each admitted value.
+      * `[ ]`   Each return-arm guard accepts its own arm and rejects the other.
+
+   * `[ ]`   planComplexStage/`planComplexStage.guard.ts`
+      * `[ ]`   Five guards: `isPlanComplexStageParams`, `isPlanComplexStagePayload`, `isPlannableRecipeStep`, `isPlanComplexStageSuccessReturn` and `isPlanComplexStageErrorReturn` — one per type this module declares, less the `PlanComplexStageReturn` union.
+      * `[ ]`   `isPlanComplexStagePayload` delegates `parentJob` to `isDialecticJobRow` and its payload to `isDialecticPlanJobPayload`, and `recipeStep` to the recipe-step guards the shared package owns.
+      * `[ ]`   `isPlannableRecipeStep` carries the body `isPlannableStep` has today, its predicate target now the named `PlannableRecipeStep`.
+
+   * `[ ]`   planComplexStage/`planComplexStage.test.ts`
+      * `[ ]`   Every case calls `planComplexStage(deps, params, payload)` and restates its `Act` line to that call; every fixture is drawn from this module's builders.
+      * `[ ]`   Each case that asserts a thrown error asserts the returned error arm carrying that failure's existing message with `retriable: false`.
+      * `[ ]`   Each case that asserts a returned array asserts `{ childJobs }` and reads the array off that member.
+      * `[ ]`   New case: a payload that is not a `PlanComplexStagePayload` returns the error arm and calls `deps.findSourceDocuments` zero times.
+      * `[ ]`   New case: a planner payload whose context disagrees with the parent returns the error arm naming the mismatched fields, and no child row is produced. The case asserting it was skipped is deleted with the branch it covered.
+      * `[ ]`   New case: a planner payload that fails `isJson` returns the error arm, arranged beside the context-mismatch case so the two failures cannot collapse into one branch.
+      * `[ ]`   New case: the planner receives `payload.parentJob.payload.user_jwt` as its fourth argument, captured at the call site, so the retired parameter cannot return unnoticed.
+      * `[ ]`   Every remaining case keeps its coverage and its assertions.
+
+   * `[ ]`   planComplexStage/`planComplexStage.planComplexStage.test.ts`
+      * `[ ]`   Every case calls `planComplexStage(deps, params, payload)` and restates its `Act` line to that call, its fixtures drawn from this module's builders.
+      * `[ ]`   Each case that asserts a returned array asserts `{ childJobs }`; each case that asserts a throw asserts the returned error arm.
+      * `[ ]`   Every source-group, recency-selection and completed-filter arrangement and assertion is unchanged.
+
+   * `[ ]`   planComplexStage/`planComplexStage.parallel.test.ts`
+      * `[ ]`   Every case calls `planComplexStage(deps, params, payload)` and restates its `Act` line to that call, its fixtures drawn from this module's builders.
+      * `[ ]`   Each case that asserts a returned array asserts `{ childJobs }`; every parallel-group arrangement and child-count assertion is unchanged.
+
+   * `[ ]`   planComplexStage/`planComplexStage.ts`
+      * `[ ]`   The function is declared as annotated above; the six-parameter list is deleted, and `PlanComplexStageFn`, `PlanComplexStageReturn` and `PlannableRecipeStep` are imported from `./planComplexStage.interface.ts`.
+      * `[ ]`   `isPlanComplexStagePayload(payload)` is the first statement of the body, its `false` branch returning the error arm; `payload.parentJob` and `payload.recipeStep` are bound after it, and `params.dbClient` replaces every `dbClient` reference.
+      * `[ ]`   `isPlannableStep` is deleted from this file; `isPlannableRecipeStep` is imported from `./planComplexStage.guard.ts` and its rejection returns the error arm.
+      * `[ ]`   The `Object.getOwnPropertyDescriptor` block proving `user_jwt` is deleted with the braces enclosing it. The planner call's fourth argument becomes `payload.parentJob.payload.user_jwt`.
+      * `[ ]`   Each of the eleven `throw new Error(…)` statements becomes a `return` of the error arm carrying that same message with `retriable: false`.
+      * `[ ]`   `childJobPayloads` is annotated `PlannedChildPayload[]`. The `hasExecuteDiscriminatingFields` expression is replaced by `isDialecticExecuteShapedPayload`, and the `let jobType` and `let validatedPayload` declarations are deleted: each branch holds its own proven payload, narrows it with `isJson`, and passes that value and its literal `job_type` to one row construction.
+      * `[ ]`   The `try`/`catch` around the row construction is deleted with its `continue`; the context-mismatch `continue` becomes a `return` of the error arm; and the `isJson` failure and the redundant second `stageSlug` check inside that block resolve against the stage slug already validated above.
+      * `[ ]`   `return childJobsToInsert` becomes `return { childJobs: childJobsToInsert }`, and the empty-source-documents early return becomes `return { childJobs: [] }`.
+      * `[ ]`   The `isDialecticExecuteJobPayload`, `isDialecticPlanJobPayload` and `isJson` imports move to the guard packages that export them; the `SupabaseClient` and `Database` imports stay, `params.dbClient` carrying that type.
+      * `[ ]`   The two live `[task_isolator]` log prefixes become `[planComplexStage]`. The four commented-out log lines are deleted with the old function name they carry.
+      * `[ ]`   Nothing else changes: the source-group filter and its sort, the completed-document filter, the planner lookup and call, and every child row member stand exactly as they are.
+
+   * `[ ]`   planComplexStage/`planComplexStage.provides.ts`
+      * `[ ]`   Re-export `planComplexStage.ts`, `planComplexStage.interface.ts`, `planComplexStage.guard.ts` and `planComplexStage.mock.ts`.
+
+   * `[ ]`   supabase/functions/dialectic-worker/createJobContext/`JobContext.interface.ts`
+      * `[ ]`   Both `planComplexStage` members take `PlanComplexStageFn` from `../planComplexStage/planComplexStage.provides.ts`, and the `dialectic-service/dialectic.interface.ts` import of that type is deleted.
+
+   * `[ ]`   supabase/functions/dialectic-worker/createJobContext/`JobContext.mock.ts`
+      * `[ ]`   The inline `planComplexStage: async () => []` default becomes `mockPlanComplexStage` imported from this module's provides; the two pass-through assignments are unchanged.
+
+   * `[ ]`   supabase/functions/dialectic-service/`dialectic.interface.ts`
+      * `[ ]`   Delete `PlanComplexStageFn` and the `planComplexStage` member of `IJobProcessors`, and the imports each required.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Deps face inward: this module imports `IPlanJobContext` from `createJobContext`, payload and recipe types from the service-layer interface, and four guards from the shared package. It exports its own surface outward through `planComplexStage.provides.ts`.
+      * `[ ]`   No cycle: `createJobContext`, `processComplexJob`, the guard package and every granularity planner import nothing from this module.
+      * `[ ]`   `processComplexJob/processComplexJob.ts` and its five suites, `dialectic-worker/index.ts`, `index.test.ts` and `_shared/dialectic.mock.ts` go transiently non-compilable at this node and are not edited here: the first calls this function with five positional arguments and reads a bare array, the root imports it and wraps it in a `defaultProcessors` adapter for the registry member this node deletes, and the shared mock spies that member. Each belongs to its own node.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   `PlanComplexStageFn` declares `payload: unknown`, and the implementation is annotated with it and declares no parameter types of its own — proven by the compiler.
+      * `[ ]`   No value in the implementation is annotated with a union composed at its annotation site, and neither `jobType` nor `validatedPayload` exists — proven by the compiler.
+      * `[ ]`   `GranularityPlannerFn` returns `PlannedChildPayload[]` and every granularity planner compiles unchanged — proven by the compiler.
+      * `[ ]`   Every symbol `planComplexStage.interface.ts` exports is both imported and consumed by a proof block — interface test, bidirectional enumeration.
+      * `[ ]`   Every type this module owns, less the `PlanComplexStageReturn` union, has a guard with no false positives and no false negatives — guard test, the case checklist per guard.
+      * `[ ]`   `isDialecticExecuteShapedPayload` selects an execute-shaped payload, rejects a plan payload, and throws nothing — shared guard suite.
+      * `[ ]`   No path throws; every path returns a member of `PlanComplexStageReturn` — behavioral suites, one case per branch of the interaction spec.
+      * `[ ]`   A context mismatch and an `isJson` failure each return the error arm and produce no child row — unit test, both cases in one file.
+      * `[ ]`   The number of rows in `childJobs` equals the number of planner payloads admitted, with no payload silently dropped — unit test, count assertion against a planner returning a mix of admitted and rejected payloads.
+      * `[ ]`   The source-group filter selects the single most recent matching document, and the no-match branch proceeds with every document — behavioral suites, unchanged assertions.
+      * `[ ]`   The planner receives the parent payload's `user_jwt` as its fourth argument — unit test, captured-argument assertion.
+      * `[ ]`   `IJobProcessors` declares four members and `IPlanJobContext` carries this module's `PlanComplexStageFn` — proven by the compiler.
+      * `[ ]`   No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
+
 *   `[ ]` supabase/functions/dialectic-worker/processComplexJob/processComplexJob.ts **[BE] Canonize the PLAN processor as a module owning its whole contract: prove one payload type at entry that admits both shapes, select the deferred arm on the row column, report the planning outcome on a two-arm return, and stop writing `failed` on any path**
 
     *   `[ ]` `objective`
@@ -2391,17 +2668,19 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   Every `job_failed` field is the proven payload's own value — unit test.
       * `[ ]`   No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
 
-* `[ ]`   supabase/functions/dialectic-worker/processJob.ts **[BE] Take the canonical `(deps, params, payload)` shape and report the dispatch outcome on a two-arm return: call every processor by its reshaped contract, rebuild the `ProcessCompressJobDeps` literal, and delete the redundant COMPRESS payload gate and the `failed` write behind it**
+* `[ ]`   supabase/functions/dialectic-worker/processJob/processJob.ts **[BE] Canonize the dispatcher as a module owning its whole contract and the processor registry: take the canonical `(deps, params, payload)` shape, prove the row once at entry, guard no arm's payload, call every processor by its reshaped contract, rebuild the `ProcessCompressJobDeps` literal, and delete the redundant COMPRESS payload gate and the `failed` write behind it**
 
    * `[ ]`   `objective`
       * `[ ]`   Solve a dispatcher that swallows every outcome it was handed. Four processors now report `Success | Error`, and this function — the only thing between them and the runner that claimed the row — takes six positional parameters, returns `void`, and discards all four results. It writes `status: 'failed'` itself for the COMPRESS arm, so a failure that could succeed on a later attempt is recorded as terminal by the one party holding neither `attempt_count` nor `max_retries`. Three of its arms and its `default` leave by throwing, so a caller that wanted to read an outcome would still have to catch one. It hands the COMPRESS processor a model call's worth of collaborators — `enqueueModelCall`, a token counter, a tiktoken encoding closure and the Anthropic counter — every one of which that processor stopped using when the model call moved into `prepareModelJob`. And it gates the COMPRESS payload with a guard the processor now runs on its own entry, so a malformed payload throws out of this file instead of returning as the processor's classified error arm.
       * `[ ]`   Functional goals:
+         * `[ ]`   The module owns its interface, interface test, mock, guard, guard test and provides beside the implementation and the suite already in the folder. Consumers reach every symbol through `processJob.provides.ts`.
+         * `[ ]`   `IJobProcessors` is declared in this module and imports each member's function type from that processor's own provides. It is the registry this function dispatches through and belongs with the function that reads it.
+         * `[ ]`   `ProcessJobFn` declares `payload: unknown`, and `isProcessJobPayload(payload)` is the first statement of the body; its `false` return produces the error arm.
          * `[ ]`   The function is declared `export const processJob: ProcessJobFn = async (deps, params, payload) => { … }`, its parameter types inferred from that annotation rather than restated, and it returns `Promise<ProcessJobReturn>`.
          * `[ ]`   `deps.processors` and `deps.ctx` replace the `processors` and `ctx` parameters; `params.dbClient` replaces the `dbClient` parameter; `payload.job` replaces the `job` parameter; the `projectOwnerUserId` and `authToken` parameters are deleted, no arm taking either after this node.
-         * `[ ]`   Each arm calls its processor by the reshaped contract: `deps.processors.processSimpleJob(deps.ctx, { dbClient }, executePayload)`, `deps.processors.processComplexJob(planCtx, { dbClient }, planPayload)`, `deps.processors.processRenderJob(renderCtx, { dbClient }, { job })`, and `deps.processors.processCompressJob(compressDeps, { dbClient }, { job })`.
-         * `[ ]`   The `jobIsExecuteJob` and `jobIsPlanJob` predicates are deleted. The EXECUTE and PLAN arms narrow with `isProcessSimpleJobPayload` and `isProcessComplexJobPayload`, the guards the `createJobContext` node adds to `type_guards.dialectic.ts`, each applied to the arm's own payload object: `const executePayload = { job: payload.job }` guarded by `isProcessSimpleJobPayload`, and the same for the plan arm. This is the pattern the payload workstream ratified — the arm is selected by the `job_type` column and the payload guard narrows inside it.
-         * `[ ]`   Only those two arms narrow. `ProcessRenderJobPayload` and `ProcessCompressJobPayload` each declare `job: DialecticJobRow` unnarrowed, so `{ job: payload.job }` assigns to both with no guard, and each of those processors validates the payload it declares on its own entry.
-         * `[ ]`   Both guards delegate the row's payload to `isDialecticExecuteJobPayload` and `isDialecticPlanJobPayload`, which throw a per-member diagnostic rather than returning `false`. A `try` around the `switch` converts that throw to `{ error, retriable: false }`, surfacing the guard's own message naming the member at fault. The two hand-thrown `Unsupported or null job_type for job <id>` statements inside the EXECUTE and PLAN arms are deleted with the predicates whose `else` branches held them.
+         * `[ ]`   Each arm calls its processor by the reshaped contract, every one of them taking the same payload object: `deps.processors.processSimpleJob(deps.ctx, { dbClient }, { job })`, `deps.processors.processComplexJob(planCtx, { dbClient }, { job })`, `deps.processors.processRenderJob(renderCtx, { dbClient }, { job })`, and `deps.processors.processCompressJob(compressDeps, { dbClient }, { job })`.
+         * `[ ]`   The `jobIsExecuteJob` and `jobIsPlanJob` predicates are deleted with the two `if`/`else` blocks that called them and the two hand-thrown `Unsupported or null job_type for job <id>` statements those `else` branches held.
+         * `[ ]`   No arm guards a payload. Every processor declares `payload: unknown` and proves the payload it needs on its own entry, returning its own per-member diagnostic on its error arm, which this function propagates. This file calls one guard, on its own payload, and no other.
          * `[ ]`   Each arm narrows its processor's return: an error arm is propagated unchanged as this function's error arm, carrying that processor's own `Error` and its own `retriable` flag; a success arm returns `{ dispatched: true }`.
          * `[ ]`   The `default` returns the error arm carrying an `Error` built from the message it throws today, with `retriable: false`, in place of throwing. It is the one arm-selection failure that survives, a row whose column matches no case.
          * `[ ]`   The `ProcessCompressJobDeps` literal carries `assembleCompressionPrompt`, `assembleContinuationPrompt`, `prepareModelJob`, `constructStoragePath` and `logger`, and nothing else, with `prepareModelJob` supplied from `deps.ctx.prepareModelJob`, the pre-bound closure the composition root already puts on the job context.
@@ -2433,26 +2712,28 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   Inside boundary:
          * `[ ]`   Which collaborators each processor is constructed with, this file being the sole construction site of the COMPRESS processor's deps.
          * `[ ]`   What this function reports for each arm it dispatched.
-         * `[ ]`   `ProcessJobDeps`, `ProcessJobParams`, `ProcessJobPayload`, `ProcessJobSuccessReturn`, `ProcessJobErrorReturn`, `ProcessJobReturn` and `ProcessJobFn` — this function's own contract, declared in `dialectic-service/dialectic.interface.ts` beside `IJobProcessors` because that file already declares every processor contract this function consumes, and landed in this node because `processJob.ts` is the first source file that requires them.
+         * `[ ]`   `ProcessJobDeps`, `ProcessJobParams`, `ProcessJobPayload`, `ProcessJobSuccessReturn`, `ProcessJobErrorReturn`, `ProcessJobReturn`, `ProcessJobFn` and `IJobProcessors` — this function's own contract and the registry it dispatches through, and every guard and mock for them.
       * `[ ]`   Outside boundary:
          * `[ ]`   Whether a failure is retried, and what a job's terminal state is, both owned by the runner.
          * `[ ]`   What any processor does with what it is given, and every payload contract and guard those processors own.
-         * `[ ]`   The eight `ProcessSimpleJob*`, `ProcessComplexJob*` and `ProcessRenderJob*` symbol sets, declared in the `createJobContext` node. This node adds `ProcessJob*` to the same file; it neither redeclares nor edits those.
+         * `[ ]`   Each `Process*JobFn` and `PlanComplexStageFn` this registry names, declared by the module that implements it and imported here through that module's provides.
+         * `[ ]`   `IJobContext`, `IPlanJobContext` and `IRenderJobContext`, owned by `createJobContext`.
          * `[ ]`   The model call, owned by `prepareModelJob` and reached through the closure this file forwards.
 
    * `[ ]`   `deps`
-      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` (`IJobProcessors`, already imported), now reached through `deps.processors` rather than a positional parameter.
-         * `[ ]`   Layer classification: service-layer contract surface.
-         * `[ ]`   Direction: inbound; no new direction is opened.
-         * `[ ]`   Purpose: the five processors this function dispatches to, injected as one typed collaborator object.
+      * `[ ]`   Provider: each processor's provides barrel — `../processSimpleJob/processSimpleJob.provides.ts` (`ProcessSimpleJobFn`, `mockProcessSimpleJob`), `../processComplexJob/processComplexJob.provides.ts` (`ProcessComplexJobFn`, `mockProcessComplexJob`), `../processRenderJob/processRenderJob.provides.ts` (`ProcessRenderJobFn`, `mockProcessRenderJob`) and `../processCompressJob/processCompressJob.provides.ts` (`ProcessCompressJobFn`, `ProcessCompressJobDeps`, `ProcessCompressJobParams`, `isProcessCompressJobErrorReturn`).
+         * `[ ]`   Layer classification: sibling app-layer modules, each the owner of its own processor contract.
+         * `[ ]`   Direction: inbound; the registry names each processor's function type and this file dispatches through it, and no processor imports this module.
+         * `[ ]`   Purpose: declare `IJobProcessors` from the four contracts their owners publish, and default each member of this module's registry builder to that owner's function mock.
+         * `[ ]`   All four provides barrels exist before this node is worked, each created by its own module's node, and `dialectic-service/dialectic.interface.ts` declares no processor function type after those nodes close.
       * `[ ]`   Provider: `createJobContext/JobContext.interface.ts` (`IJobContext`, `IPlanJobContext`, `IRenderJobContext`, already imported), now reached through `deps.ctx`.
          * `[ ]`   Layer classification: app-layer context contract, constructed at the composition root.
          * `[ ]`   Direction: inbound; this file already takes `ctx: IJobContext` and reads five members off it, so no new direction is opened and no wiring changes at the root.
          * `[ ]`   Purpose: the collaborators each arm slices or forwards, `prepareModelJob` among them, so the COMPRESS processor reaches the same dispatcher every other job type reaches.
-      * `[ ]`   Added provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isProcessSimpleJobPayload`, `isProcessComplexJobPayload`), the two arm guards the `createJobContext` node adds to that file.
-         * `[ ]`   Layer classification: shared guard surface, owner of every payload-arm guard in the repo.
+      * `[ ]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticJobRow`), which this module's payload guard delegates to.
+         * `[ ]`   Layer classification: shared guard package, owner of the job row.
          * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: narrow a row typed `DialecticJobPayload` into the arm type its processor declares, replacing the two file-private predicates that re-checked the `job_type` column the `switch` had already read.
+         * `[ ]`   Purpose: prove the row this function's payload carries; no arm payload is guarded in this file.
       * `[ ]`   Removed providers: `npm:@anthropic-ai/tokenizer` (`countTokens as countTokensAnthropic`), `npm:js-tiktoken` (`getEncoding as rawGetEncoding`) and `type_guards.chat.ts` (`isKnownTiktokenEncoding`), all three imported solely to build the encoding closure this literal no longer carries; `enqueueCompressJobs.guard.ts` (`isDialecticCompressJobPayload`) with `enqueueCompressJobs.interface.ts` (`DialecticCompressJobPayload`) and `processCompressJob.guard.ts` (`isProcessCompressJobErrorReturn`), which served the deleted gate and the deleted write; and `dialectic-service/dialectic.interface.ts`'s `DialecticExecuteJobPayload` and `DialecticPlanJobPayload`, whose only consumers were the two deleted predicates. `ctx.enqueueModelCall` and `ctx.countTokens` stay on the context for their other consumers and are simply not read here.
       * `[ ]`   Confirm:
          * `[ ]`   `IJobContext` gains and loses nothing; this node reads one more member and two fewer.
@@ -2461,34 +2742,37 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   `context_slice`
          * `[ ]`   From `deps.ctx`, for the COMPRESS arm: `promptAssembler`, `fileManager`, `downloadFromStorage`, `logger` and `prepareModelJob` — the five members the two closures and the deps literal read. The other three arms slice `deps.ctx` through `createPlanJobContext` and `createRenderJobContext` or pass it whole.
 
-   * `[ ]`   `processJob.interface.test.ts`
+   * `[ ]`   processJob/`processJob.interface.test.ts`
       * `[ ]`   A case proves the deps surface by typed assignment: `Record<keyof ProcessJobDeps, true>` over `processors` and `ctx`, asserting two.
       * `[ ]`   A case proves the params surface the same way over `dbClient`, asserting one, and a case proves the payload surface over `job`, asserting one — exhaustive in both directions, and the proof that `projectOwnerUserId` and `authToken` are gone.
+      * `[ ]`   A case proves the `IJobProcessors` surface by an exhaustive key record over `processSimpleJob`, `processComplexJob`, `processRenderJob` and `processCompressJob`.
       * `[ ]`   A case proves the two-arm return by typed assignment: a `ProcessJobSuccessReturn` value assigns to `ProcessJobReturn`, and a `ProcessJobErrorReturn` value assigns to `ProcessJobReturn`.
       * `[ ]`   A case proves `ProcessJobSuccessReturn` is `{ dispatched: true }` by typed literal, carrying no other member.
-      * `[ ]`   A case proves `ProcessJobFn` accepts the declared deps, params and payload and returns `Promise<ProcessJobReturn>`.
+      * `[ ]`   A case proves `ProcessJobFn`'s declared return in the async form: `ReturnType<ProcessJobFn>` admits `Promise<ProcessJobReturn>`. No block proves a payload contract through `Parameters<ProcessJobFn>[2]`; that slot is `unknown` and admits everything.
       * `[ ]`   The file contains only type imports, contract headers and typed assertions; it calls no builder and stubs no function.
+      * `[ ]`   Report the enumeration: every symbol `processJob.interface.ts` exports, and the block proving each, in both directions.
 
-   * `[ ]`   dialectic-service/`dialectic.interface.ts`
+   * `[ ]`   processJob/`processJob.interface.ts`
+      * `[ ]`   `IJobProcessors` declares `processSimpleJob: ProcessSimpleJobFn`, `processComplexJob: ProcessComplexJobFn`, `processRenderJob: ProcessRenderJobFn` and `processCompressJob: ProcessCompressJobFn`, each imported from that processor's provides. The registry names the processors `processJob` dispatches to, one per `job_type` arm.
       * `[ ]`   `ProcessJobDeps` declares `processors: IJobProcessors` and `ctx: IJobContext`. Both are collaborator objects, so both belong in deps and neither is a per-invocation value.
-      * `[ ]`   `ProcessJobParams` declares `dbClient: SupabaseClient<Database>` and nothing else, matching every processor params type this file declares.
-      * `[ ]`   `ProcessJobPayload` declares `job: DialecticJobRow & { payload: DialecticJobPayload }` — the undetermined union, this function being the one place an arm is still unselected.
-      * `[ ]`   `ProcessJobSuccessReturn` is `{ dispatched: true }`, `ProcessJobErrorReturn` is `{ error: Error; retriable: boolean }`, and `ProcessJobReturn` is their union.
-      * `[ ]`   `ProcessJobFn` is `(deps: ProcessJobDeps, params: ProcessJobParams, payload: ProcessJobPayload) => Promise<ProcessJobReturn>`.
-      * `[ ]`   `IJobContext` is imported here for the deps type; `SupabaseClient`, `Database`, `DialecticJobRow` and `DialecticJobPayload` are already declared or imported in this file.
+      * `[ ]`   `ProcessJobParams` declares `dbClient: SupabaseClient<Database>` and nothing else, matching every processor params type in the worker.
+      * `[ ]`   `ProcessJobPayload` declares `job: DialecticJobRow`. The arm is selected by the row's `job_type` column and every processor proves its own payload, so this type narrows the payload column no further.
+      * `[ ]`   `ProcessJobSuccessReturn` is `{ dispatched: true }`, `ProcessJobErrorReturn` is `{ error: Error; retriable: boolean }`, and `ProcessJobReturn` is their two-arm union.
+      * `[ ]`   `ProcessJobFn` is `(deps: ProcessJobDeps, params: ProcessJobParams, payload: unknown) => Promise<ProcessJobReturn>`.
+      * `[ ]`   `IJobContext` is imported from `../createJobContext/JobContext.interface.ts`; `SupabaseClient`, `Database` and `DialecticJobRow` from the files that own them.
 
    * `[ ]`   `processJob.interaction.spec`
       * `[ ]`   Arm selection, unchanged: the `switch` over `payload.job.job_type`, with `EXECUTE`, `PLAN`, `RENDER`, `COMPRESS` and a `default`.
-      * `[ ]`   Branch: an `EXECUTE` or `PLAN` row carries a payload its arm type does not admit.
-         * `[ ]`   Condition: `payload.job.job_type` is `'EXECUTE'` or `'PLAN'`, and the row's payload fails a member check.
-         * `[ ]`   Decision: `isProcessSimpleJobPayload({ job: payload.job })`, or `isProcessComplexJobPayload({ job: payload.job })`, each delegating the row's payload to the arm guard that owns it, each throwing a per-member diagnostic.
-         * `[ ]`   Dependency call: the existing delegation log line only; no processor is called.
-         * `[ ]`   Outcome: the `try` around the `switch` catches that diagnostic and returns `{ error, retriable: false }` carrying the guard's own message, which names the member at fault. No hand-rolled message stands in front of it.
+      * `[ ]`   Branch: the payload is not a `ProcessJobPayload`.
+         * `[ ]`   Condition: the entry guard returns `false`.
+         * `[ ]`   Decision: `isProcessJobPayload(payload)`, which delegates the row to `isDialecticJobRow` and returns a boolean.
+         * `[ ]`   Dependency call: none; the `switch` is not entered and no processor is called.
+         * `[ ]`   Outcome: `{ error, retriable: false }`. No row is written.
       * `[ ]`   Branch: an `EXECUTE`, `PLAN` or `RENDER` row is dispatched.
-         * `[ ]`   Condition: the arm's guard admitted the payload, or the arm is `RENDER`, whose payload type narrows nothing.
-         * `[ ]`   Decision: the guard call above for the first two; none for `RENDER`.
-         * `[ ]`   Dependency call: `deps.processors.processSimpleJob(deps.ctx, { dbClient }, executePayload)`; `deps.processors.processComplexJob(createPlanJobContext(deps.ctx), { dbClient }, planPayload)`; `deps.processors.processRenderJob(createRenderJobContext(deps.ctx), { dbClient }, { job: payload.job })`.
-         * `[ ]`   Outcome: the processor's error arm is returned as `{ error, retriable }` with both members unchanged; its success arm returns `{ dispatched: true }`.
+         * `[ ]`   Condition: the `switch` selects that arm on `payload.job.job_type`.
+         * `[ ]`   Decision: none beyond the column; no payload is guarded here.
+         * `[ ]`   Dependency call: `deps.processors.processSimpleJob(deps.ctx, { dbClient }, { job: payload.job })`; `deps.processors.processComplexJob(createPlanJobContext(deps.ctx), { dbClient }, { job: payload.job })`; `deps.processors.processRenderJob(createRenderJobContext(deps.ctx), { dbClient }, { job: payload.job })`.
+         * `[ ]`   Outcome: the processor's error arm is returned as `{ error, retriable }` with both members unchanged, a payload the processor rejected reaching the caller as that processor's own per-member diagnostic; its success arm returns `{ dispatched: true }`.
       * `[ ]`   Branch: the row's column matches no arm.
          * `[ ]`   Condition: `payload.job.job_type` matches no `case`.
          * `[ ]`   Decision: the `default`.
@@ -2501,65 +2785,86 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   Outcome: the processor's error arm is returned as `{ error, retriable }` with both members unchanged, and no row is written; its success arm returns `{ dispatched: true }`, that success being either a dedup completion the processor wrote itself or a dispatch whose completion `saveResponse` writes.
       * `[ ]`   Ordering and side effects: exactly one processor call per invocation; no `dialectic_generation_jobs` write on any path; no notification on any path; every path leaves the function by returning a member of the union, and nothing leaves it by throwing.
 
-   * `[ ]`   _shared/`dialectic.mock.ts`
-      * `[ ]`   Five owned object types take the four symbols each, production-named — `<Type>Overrides` as `Partial<T>`, `build<Type>`, `<Type>Corruptions` as `{ [K in keyof T]?: unknown }` and `invalidate<Type>` returning `unknown`: `ProcessJobDeps`, `ProcessJobParams`, `ProcessJobPayload`, `ProcessJobSuccessReturn` and `ProcessJobErrorReturn`. `ProcessJobReturn` is a union and takes nothing of its own.
-      * `[ ]`   `buildProcessJobDeps` defaults `ctx` to `buildIJobContext()` from `JobContext.mock.ts` and `processors` to an `IJobProcessors` literal composed member for member from each member's own function mock: `mockProcessSimpleJob`, `mockProcessComplexJob` and `mockProcessRenderJob` from this file, `mockPlanComplexStage` from this file, and `mockProcessCompressJobFn` from `processCompressJob.mock.ts`.
-      * `[ ]`   `mockPlanComplexStage: PlanComplexStageFn` is added, returning an empty child-job array. `PlanComplexStageFn` is owned by `dialectic.interface.ts` and has no mock anywhere; `IJobProcessors` cannot be built without one.
-      * `[ ]`   `buildProcessJobParams` defaults `dbClient` to `createMockSupabaseClient(undefined, {}).client` cast to `SupabaseClient<Database>`, the external-client cast this file already makes. `buildProcessJobPayload` returns `{ job: buildDialecticJobRow() }`.
+   * `[ ]`   processJob/`processJob.mock.ts`
+      * `[ ]`   Six owned object types take the four symbols each, production-named — `<Type>Overrides` as `Partial<T>`, `build<Type>`, `<Type>Corruptions` as `{ [K in keyof T]?: unknown }` and `invalidate<Type>` returning `unknown`: `IJobProcessors`, `ProcessJobDeps`, `ProcessJobParams`, `ProcessJobPayload`, `ProcessJobSuccessReturn` and `ProcessJobErrorReturn`. `ProcessJobReturn` is a union and takes nothing of its own.
+      * `[ ]`   `buildIJobProcessors` defaults each member to that processor's own function mock, imported from its provides: `mockProcessSimpleJob`, `mockProcessComplexJob`, `mockProcessRenderJob` and `mockProcessCompressJob`. No member is mocked here; each is the mock its owner publishes.
+      * `[ ]`   `buildProcessJobDeps` defaults `ctx` to `buildIJobContext()` from `JobContext.mock.ts` and `processors` to `buildIJobProcessors()`, composing the nested builder rather than restating its members.
+      * `[ ]`   `buildProcessJobParams` defaults `dbClient` to `createMockSupabaseClient(undefined, {}).client` cast to `SupabaseClient<Database>`, the external-client cast permitted for a vendor type the repo does not own. `buildProcessJobPayload` returns `{ job: buildDialecticJobRow() }`.
       * `[ ]`   `buildProcessJobSuccessReturn` returns `{ dispatched: true }`; `buildProcessJobErrorReturn` defaults `error` to `new Error("mock-process-job-error")` and `retriable` to `false`.
       * `[ ]`   One function mock for the owned function type: `mockProcessJob: ProcessJobFn`, returning `buildProcessJobSuccessReturn()` — identical signature, no extra parameters, no options bag, no recording.
-      * `[ ]`   Every other export in this file is unchanged.
+      * `[ ]`   No spy, no dummy class and no `create…` bundle is declared here. A test that must record invocations wraps a mock with the runner's spy facility at its own call site.
 
-   * `[ ]`   _shared/utils/type-guards/`type_guards.dialectic.test.ts`
-      * `[ ]`   A case checklist per guard this node adds, its fixtures drawn from the builders and invalidators above and never hand-rolled: the builder's valid default accepted; valid overrides accepted; `null`, `undefined`, a primitive and an array rejected; each property corrupted in turn rejected; each required property omitted by rest-destructure rejected.
+   * `[ ]`   processJob/`processJob.guard.test.ts`
+      * `[ ]`   A case checklist per guard this module owns, its fixtures drawn from this module's builders and invalidators and never hand-rolled: the builder's valid default accepted; valid overrides accepted; `null`, `undefined`, a primitive and an array rejected; each property corrupted in turn rejected; each required property omitted by rest-destructure rejected.
       * `[ ]`   `isProcessJobSuccessReturn` accepts `buildProcessJobSuccessReturn()` and rejects `buildProcessJobErrorReturn()`, and `isProcessJobErrorReturn` rejects the success flavor, arranged in one file so a collapsed discriminant fails an assertion.
-      * `[ ]`   `isProcessJobDeps` is proven to check presence only: a deps object whose `processors` and `ctx` are present is accepted, and one missing either is rejected. A passing case proves presence, never behavior, and no case asserts otherwise.
-      * `[ ]`   Every existing case in this file keeps its arrangement and its assertions.
+      * `[ ]`   `isProcessJobDeps` and `isIJobProcessors` are each proven to check presence only: an object whose members are present is accepted and one missing any member is rejected. A passing case proves presence, never behavior, and no case asserts otherwise.
+      * `[ ]`   `isProcessJobPayload` accepts a row carrying each of the four `job_type` values, arranged in one file, so the row-only proof cannot narrow to one arm.
 
-   * `[ ]`   _shared/utils/type-guards/`type_guards.dialectic.ts`
-      * `[ ]`   Five guards are added: `isProcessJobDeps`, `isProcessJobParams`, `isProcessJobPayload`, `isProcessJobSuccessReturn` and `isProcessJobErrorReturn` — one per type this node declares, less the `ProcessJobReturn` union.
-      * `[ ]`   `isProcessJobDeps` is a deps type and takes the presence-of-member form: `isRecord`, then `processors` and `ctx` each present and an object. It asserts nothing about what either collaborator does.
-      * `[ ]`   `isProcessJobParams` checks `isRecord` and that `dbClient` is present and an object. `isProcessJobPayload` checks `isRecord` and calls `isDialecticJobRow` on `job`, delegating the row to the guard the `createJobContext` node adds to this file, and narrows the row's payload no further — this function's payload is the one place an arm is still undetermined.
+   * `[ ]`   processJob/`processJob.guard.ts`
+      * `[ ]`   Six guards: `isIJobProcessors`, `isProcessJobDeps`, `isProcessJobParams`, `isProcessJobPayload`, `isProcessJobSuccessReturn` and `isProcessJobErrorReturn` — one per type this module declares, less the `ProcessJobReturn` union.
+      * `[ ]`   `isIJobProcessors` and `isProcessJobDeps` are behavior types and take the presence-of-member form: `isRecord`, then each declared member present and a function or an object as its type requires. Neither asserts anything about what a collaborator does.
+      * `[ ]`   `isProcessJobParams` checks `isRecord` and that `dbClient` is present and an object. `isProcessJobPayload` checks `isRecord` and calls `isDialecticJobRow` on `job`, and narrows the row's payload no further — each processor proves the payload it declares.
       * `[ ]`   `isProcessJobSuccessReturn` tests its own literal member and rejects the error arm; `isProcessJobErrorReturn` tests that `error` is an `Error` and `retriable` a boolean and rejects the success arm. Both are boolean checks and throw nothing.
       * `[ ]`   Every existing guard in this file is unchanged.
 
-   * `[ ]`   `processJob.test.ts`
+   * `[ ]`   processJob/`processJob.test.ts`
       * `[ ]`   Every case calls `processJob(deps, { dbClient }, { job })` and restates its `Act` line to that call, the four-field header being a claim about the body. Its deps come from `buildProcessJobDeps`, overriding only the processor the case asserts on.
       * `[ ]`   Every arm case asserts the returned value: `{ dispatched: true }` where the processor was arranged to succeed, and the propagated `{ error, retriable }` where it was arranged to fail, with both members identical to the ones the processor returned.
       * `[ ]`   The case asserting `Invalid COMPRESS payload for job …` is deleted with the gate it covered; a case in its place arranges `processCompressJob` to return the error arm a malformed payload produces and asserts this function returns that same error and `retriable` flag, and issues no `dialectic_generation_jobs` update.
       * `[ ]`   The cases that assert the constructed `ProcessCompressJobDeps` drop their `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic` expectations and assert the five members the literal now carries, with `prepareModelJob` identical to the `deps.ctx.prepareModelJob` the test supplied.
       * `[ ]`   The cases that assert the constructed `ProcessCompressJobParams` assert one member, `dbClient`, and that the payload the processor received is `{ job }`.
-      * `[ ]`   The two cases asserting a thrown `Unsupported or null job_type for job …` for an unnarrowed `EXECUTE` row and an unnarrowed `PLAN` row assert instead the returned error arm carrying the arm guard's own per-member diagnostic, for a row payload corrupted through `invalidateDialecticExecuteJobPayload` and `invalidateDialecticPlanJobPayload` respectively, each naming the member at fault. The `default` case asserts the returned error arm carrying the unchanged message with `retriable: false`.
+      * `[ ]`   The two cases asserting a thrown `Unsupported or null job_type for job …` for an unnarrowed `EXECUTE` row and an unnarrowed `PLAN` row assert instead that the row is dispatched to its processor unguarded, and that the error the processor returns for a payload it rejects is the value this function returns. The `default` case asserts the returned error arm carrying the unchanged message with `retriable: false`.
+      * `[ ]`   New case: a payload that is not a `ProcessJobPayload` returns the error arm with `retriable: false`, calls no processor and writes no row.
+      * `[ ]`   Every `createMockJobProcessors` usage becomes `buildIJobProcessors`, with the runner's spy facility applied at the call site where a case asserts an invocation.
       * `[ ]`   A case proves each arm still routes: a `'COMPRESS'` row reaches `processCompressJob` exactly once, an `'EXECUTE'` row reaches `processSimpleJob`, a `'PLAN'` row reaches `processComplexJob`, and a `'RENDER'` row reaches `processRenderJob`.
       * `[ ]`   New case: no arm writes `dialectic_generation_jobs`, arranged with a failing processor on each of the four arms in one file so a reinstated write fails an assertion.
       * `[ ]`   Every remaining case keeps its coverage and its assertions, less the retired members.
 
    * `[ ]`   `processJob.ts`
-      * `[ ]`   The function is declared `export const processJob: ProcessJobFn = async (deps, params, payload) => { … }`; the six-parameter list and its inline types are deleted. `ProcessJobFn` and `ProcessJobReturn` are imported from `dialectic-service/dialectic.interface.ts` beside the imports already taken from that file.
+      * `[ ]`   The function is declared `export const processJob: ProcessJobFn = async (deps, params, payload) => { … }`; the six-parameter list and its inline types are deleted. `ProcessJobFn`, `ProcessJobReturn` and `IJobProcessors` are imported from `./processJob.interface.ts`.
+      * `[ ]`   `isProcessJobPayload(payload)` is the first statement of the body, its `false` branch returning the error arm; `payload.job` is bound after it.
       * `[ ]`   `params.dbClient` is destructured once at the top and replaces every `dbClient` reference; `payload.job` replaces every `job` reference, `jobId` still destructured from it; `deps.ctx` replaces every `ctx` reference and `deps.processors` every `processors` reference.
       * `[ ]`   Each of the four processor calls takes its reshaped arguments, and its result is narrowed: the error arm is returned as `{ error, retriable }` unchanged, and the success arm falls through to `return { dispatched: true }`.
-      * `[ ]`   The `jobIsExecuteJob` and `jobIsPlanJob` predicates are deleted with the two `if`/`else` blocks that called them and the two `throw new Error(\`Unsupported or null job_type for job ${jobId}\`)` statements those `else` branches held. The EXECUTE arm builds `const executePayload = { job: payload.job }` and narrows it with `isProcessSimpleJobPayload`; the PLAN arm does the same with `isProcessComplexJobPayload`; each negated-guard block is the narrowing device the compiler requires and is structurally unreachable, the guards throwing rather than returning `false`.
-      * `[ ]`   A `try` wraps the `switch`, and its `catch` returns `{ error: <the caught Error>, retriable: false }` — the one place a guard diagnostic becomes this function's error arm.
+      * `[ ]`   The `jobIsExecuteJob` and `jobIsPlanJob` predicates are deleted with the two `if`/`else` blocks that called them and the two `throw new Error(\`Unsupported or null job_type for job ${jobId}\`)` statements those `else` branches held. Every arm passes `{ job: payload.job }` and guards nothing.
+      * `[ ]`   No `try` wraps the `switch`. The entry guard returns a boolean, every processor returns a member of its own union, and the `default` returns; no statement in this file can throw.
       * `[ ]`   The `default`'s `throw new Error(\`Unsupported or null job_type for job ${jobId}\`)` becomes a `return` of the error arm carrying an `Error` built from that same message, with `retriable: false`.
-      * `[ ]`   Added imports: `isProcessSimpleJobPayload` and `isProcessComplexJobPayload` from `_shared/utils/type-guards/type_guards.dialectic.ts`; `DialecticExecuteJobPayload` and `DialecticPlanJobPayload` are no longer imported, the deleted predicates having been their only consumers.
+      * `[ ]`   Added import: `isProcessJobPayload` from `./processJob.guard.ts`. `DialecticExecuteJobPayload`, `DialecticPlanJobPayload`, `DialecticJobPayload` and `IJobProcessors`-from-`dialectic.interface.ts` are no longer imported, the deleted predicates and the relocated registry having been their only consumers.
       * `[ ]`   The `isDialecticCompressJobPayload` call, its negated-guard block with the hand-thrown `Invalid COMPRESS payload for job ${jobId}`, and the `compressPayload` local are deleted; the COMPRESS arm passes `{ job: payload.job }` as the processor's payload.
       * `[ ]`   The `isProcessCompressJobErrorReturn` block with its `updatePayload` literal, its `dialectic_generation_jobs` update and its `throw updateError` is deleted; the arm's error handling is the same narrowing every other arm performs.
       * `[ ]`   The `ProcessCompressJobDeps` literal drops `enqueueModelCall`, `countTokens`, the `getEncoding` closure and `countTokensAnthropic`, and gains `prepareModelJob: deps.ctx.prepareModelJob`.
       * `[ ]`   Deleted imports: `countTokens as countTokensAnthropic`, `getEncoding as rawGetEncoding`, `isKnownTiktokenEncoding`, `isDialecticCompressJobPayload`, `DialecticCompressJobPayload`, `isProcessCompressJobErrorReturn`, `TablesUpdate` and `ProcessCompressJobParams` where the retired literal required it.
       * `[ ]`   Nothing else in the file changes: both assembler closures, the two context slicers, the `switch` and its arms, and every log line stand exactly as they are.
 
+   * `[ ]`   processJob/`processJob.provides.ts`
+      * `[ ]`   Re-export `processJob.ts`, `processJob.interface.ts`, `processJob.guard.ts` and `processJob.mock.ts`.
+
+   * `[ ]`   supabase/functions/dialectic-service/`dialectic.interface.ts`
+      * `[ ]`   Delete `IJobProcessors` and the five processor function-type imports it required.
+
+   * `[ ]`   supabase/functions/_shared/`dialectic.mock.ts`
+      * `[ ]`   Delete `_JobProcessorsDummyImpl`, `MockJobProcessorsSpies` and `createMockJobProcessors`, and the `spy` and `Spy` imports where nothing else in the file uses them. The class carries two `any` members under `deno-lint-ignore no-explicit-any`, and the bundle records calls; `buildIJobProcessors` replaces it and a test that must record wraps a mock at its own call site.
+      * `[ ]`   Delete `_ProcessJobDummyImpl`, `MockProcessJobSpy` and `createMockProcessJob`, which have no consumer outside this file.
+      * `[ ]`   Delete the `IJobProcessors` import.
+
+   * `[ ]`   supabase/functions/dialectic-worker/createJobContext/`createJobContext.interface.test.ts`
+      * `[ ]`   Delete the `IJobProcessors` surface case and its import. The surface is proven in this module's interface suite; no case is lost.
+
    * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this file reads the job context and the processors it was handed, imports each processor's contract and its own from the service-layer interface that declares them, and exports the implementation outward to the worker root; it exports nothing back to any processor.
+      * `[ ]`   Deps face inward: this module reads the job context and the processors it was handed, imports each processor's contract and function mock from that module's provides, and exports its own surface outward through `processJob.provides.ts`; it exports nothing back to any processor.
       * `[ ]`   The `enqueueModelCall` edge for the COMPRESS arm is replaced by the `prepareModelJob` edge one layer up the same path, so the graph gains no direction and loses two third-party tokenizer imports and two payload-guard imports.
-      * `[ ]`   No cycle: no processor imports this file.
+      * `[ ]`   No cycle: no processor imports this module, and `dialectic-service/dialectic.interface.ts` imports nothing from it after this node.
+      * `[ ]`   `dialectic-worker/index.ts`, `index.test.ts` and `index.nsf-pause.integration.test.ts` go transiently non-compilable at this node and are not edited here: the root calls this function with six positional arguments, discards its result, and imports `IJobProcessors` from the service interface, and the two suites build processors through the deleted harness. All three are support files of the worker-root node.
 
    * `[ ]`   `requirements`
       * `[ ]`   The implementation is annotated `ProcessJobFn`, takes three arguments and declares no parameter types of its own, so a divergence between the declared contract and the implementation is a compile error — proven by the compiler.
+      * `[ ]`   `ProcessJobFn` declares `payload: unknown` and the body proves it with `isProcessJobPayload` before the `switch` — proven by the compiler and by the rejection case.
       * `[ ]`   `ProcessJobDeps` declares two members, `ProcessJobParams` one and `ProcessJobPayload` one, and neither `projectOwnerUserId` nor `authToken` appears in any of them — interface test, exhaustive key records.
       * `[ ]`   Each of the four arms calls its processor with that processor's declared deps, `{ dbClient }` and `{ job }` — unit test, captured-argument assertions.
       * `[ ]`   Each arm returns `{ dispatched: true }` on its processor's success and propagates its processor's `error` and `retriable` unchanged on failure — unit test, one case per arm per outcome.
-      * `[ ]`   An `EXECUTE` or `PLAN` row whose payload fails a member check returns the error arm carrying the arm guard's own per-member diagnostic, and the `default` returns the error arm with its existing message — all three with `retriable: false`, and nothing leaves the function by throwing — unit test, returned-value assertions where a thrown error was asserted before.
-      * `[ ]`   `jobIsExecuteJob` and `jobIsPlanJob` do not exist, and the EXECUTE and PLAN arms narrow through `isProcessSimpleJobPayload` and `isProcessComplexJobPayload` — proven by the compiler and by the diagnostic each rejection case asserts.
+      * `[ ]`   A payload that is not a `ProcessJobPayload` returns the error arm and calls no processor, and the `default` returns the error arm with its existing message — both with `retriable: false`, and nothing leaves the function by throwing — unit test, returned-value assertions where a thrown error was asserted before.
+      * `[ ]`   `jobIsExecuteJob` and `jobIsPlanJob` do not exist, and no arm calls a payload guard — proven by the compiler and by a unit case asserting a row whose payload its processor rejects is still dispatched to that processor.
+      * `[ ]`   `IJobProcessors` is declared in this module and no longer in `dialectic-service/dialectic.interface.ts`, and every member takes its function type from that processor's provides — proven by the compiler.
+      * `[ ]`   No spy, dummy class or `create…` bundle for this module's types exists anywhere after this node — proven by the compiler against the deletions above.
       * `[ ]`   No path writes `dialectic_generation_jobs` — unit test, update-count assertions across all four arms with a failing processor on each.
       * `[ ]`   The constructed `ProcessCompressJobDeps` carries five members, `prepareModelJob` among them, and none of the four model-call members — unit test.
       * `[ ]`   No payload guard is called in this file, and a malformed COMPRESS payload reaches the caller as the processor's classified error arm — unit test.
@@ -2577,7 +2882,9 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   `retryJob` is imported from `./retryJob/retryJob.ts` and supplied as the canonical `RetryJobFn`. The legacy `dialectic-worker/retryJob.ts` and `dialectic-worker/retryJob.test.ts` are deleted, this being the last consumer to switch off them.
          * `[ ]`   The `ragService`, `indexingService` and `embeddingClient` members leave the params literal, and their constructions leave the function with the embedding-provider read, the `OPENAI_API_KEY` check that served the embedding adapter, and the `embeddingAdapter` the client wrapped.
          * `[ ]`   The seven members the root carried only for `saveResponse` — `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` — leave the params literal with the imports that supplied them. `netlifyResponse/index.ts` imports each directly.
-         * `[ ]`   `defaultProcessors` is an `IJobProcessors` literal assigning the five implementations directly — `processSimpleJob`, `processComplexJob`, `planComplexStage`, `processRenderJob`, `processCompressJob` — with no adapter closure around any of them, each member now satisfying its own reshaped `Fn` type.
+         * `[ ]`   `defaultProcessors` is an `IJobProcessors` literal assigning the four implementations directly — `processSimpleJob`, `processComplexJob`, `processRenderJob`, `processCompressJob` — with no adapter closure around any of them, each member now satisfying its own reshaped `Fn` type. The `planComplexStage` adapter is deleted rather than replaced: the registry declares no such member, and `processComplexJob` reaches that function through `IPlanJobContext`. The `planComplexStage` import stays, the params literal still supplying it to the factory.
+         * `[ ]`   The `processSimpleJob` adapter passes the root `deps` in place of the `_executeCtx` it is handed, and deleting it preserves that: `processJob`'s EXECUTE arm passes `deps.ctx`, which is this root's `IJobContext`. No arm's context changes.
+         * `[ ]`   Every processor implementation and `processJob` itself are imported from that module's provides barrel — `processSimpleJob.provides.ts`, `processComplexJob.provides.ts`, `processRenderJob.provides.ts`, `processCompressJob.provides.ts`, `planComplexStage.provides.ts` and `processJob.provides.ts` — in place of the six direct implementation-file imports this root takes today.
          * `[ ]`   `handleJob` calls `processJob({ processors: effectiveProcessors, ctx: deps }, { dbClient: adminClient }, { job: validatedJob })` and narrows its return with `isProcessJobErrorReturn`.
          * `[ ]`   A failure — whether `processJob` returned its error arm or an exception reached the `catch` — runs one failure sequence: the existing NSF branch, then the retry branch, then the terminal path. Both entries call the same local `handleFailure(error: Error)` closure, in the shape `processSimpleJob`'s `emitImmediateFailure` already takes in this repo.
          * `[ ]`   The retry branch sits between the claim and the terminal write: when `job.attempt_count < job.max_retries`, `handleJob` reads the `ai_providers` row for `job.payload.model_id`, builds a one-element `FailedAttemptError[]` from that row's `api_identifier`, the model id and the failure's message, and calls `deps.retryJob({ dbClient: adminClient, job }, { failedAttempts })`. The provider read happens on this path only.
@@ -2625,7 +2932,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   Direction: lateral within `dialectic-worker`.
          * `[ ]`   Purpose: the canonical retry dispatcher the factory binds and `handleJob` reads off the root. It replaces the legacy six-positional `./retryJob.ts`, which this node deletes.
          * `[ ]`   Added with it: `./retryJob/retryJob.guard.ts` for the two success flavors and the error arm `handleFailure` narrows.
-      * `[ ]`   Added provider: `./enqueueCompressJobs/enqueueCompressJobs.provides.ts` (`enqueueCompressJobs`), `_shared/utils/vector_utils.provides.ts` (`getSortedCompressionCandidates`) and `./applyCompressionOverlay/applyCompressionOverlay.provides.ts` (`applyCompressionOverlay`).
+      * `[ ]`   Added provider: `./enqueueCompressJobs/enqueueCompressJobs.provides.ts` (`enqueueCompressJobs`), `_shared/utils/vector_utils/vector_utils.provides.ts` (`getSortedCompressionCandidates`) and `./applyCompressionOverlay/applyCompressionOverlay.provides.ts` (`applyCompressionOverlay`).
          * `[ ]`   Layer classification: sibling app-layer modules and a shared utility.
          * `[ ]`   Direction: inbound and lateral within the worker.
          * `[ ]`   Purpose: three unbound implementations the factory binds and this root did not previously supply at all.
@@ -2633,16 +2940,24 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   Layer classification: third-party tokenizers and a shared guard.
          * `[ ]`   Direction: inbound.
          * `[ ]`   Purpose: the real `CountTokensDeps` the factory binds `countTokens` against, constructed once at the top instead of per call site.
-      * `[ ]`   Added provider: `dialectic-service/dialectic.interface.ts` (`FailedAttemptError`, beside the `DialecticJobPayload` and `IJobProcessors` imports already taken) and `processJob.guard.ts`'s `isProcessJobErrorReturn` from the guard file the `processJob` node adds it to.
-         * `[ ]`   Layer classification: service-layer contract surface and its guards.
+      * `[ ]`   Added provider: `dialectic-service/dialectic.interface.ts` (`FailedAttemptError`, beside the `DialecticJobPayload` import already taken).
+         * `[ ]`   Layer classification: service-layer contract surface.
          * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: build the retry payload and narrow the dispatcher's outcome.
+         * `[ ]`   Purpose: build the one-element array the retry payload declares.
+      * `[ ]`   Added provider: `./processJob/processJob.provides.ts` (`processJob`, `IJobProcessors`, `isProcessJobErrorReturn`), replacing the `IJobProcessors` import this file takes from `dialectic-service/dialectic.interface.ts` and the direct import of the dispatcher's implementation file.
+         * `[ ]`   Layer classification: sibling app-layer module, owner of the dispatcher's contract and the processor registry.
+         * `[ ]`   Direction: lateral within `dialectic-worker`.
+         * `[ ]`   Purpose: type `defaultProcessors` and `handleJob`'s `testProcessors` parameter, call the dispatcher, and narrow its outcome.
+      * `[ ]`   Added provider: `./processSimpleJob/processSimpleJob.provides.ts`, `./processComplexJob/processComplexJob.provides.ts`, `./processRenderJob/processRenderJob.provides.ts`, `./processCompressJob/processCompressJob.provides.ts` and `./planComplexStage/planComplexStage.provides.ts`, each supplying its own implementation.
+         * `[ ]`   Layer classification: sibling app-layer modules.
+         * `[ ]`   Direction: lateral within `dialectic-worker`.
+         * `[ ]`   Purpose: the four registry members and the planner the params literal supplies, each reached through its module's public surface rather than its implementation file.
       * `[ ]`   Removed providers: `_shared/services/rag_service.ts` (`RagService`), `_shared/services/indexing_service.ts` (`IndexingService`, `LangchainTextSplitter`, `EmbeddingClient`), and the seven `saveResponse` collaborators — `continueJob/continueJob.ts`, `resolveFinishReason.ts`, `isIntermediateChunk.ts`, `determineContinuation.ts`, `buildUploadContext.ts`, `jsonSanitizer.ts` and `debitTokens.ts` — with the params members each supplied.
          * `[ ]`   Layer classification: shared services and utilities.
          * `[ ]`   Direction: inbound, and closed by this node — no live reference into the RAG core remains in the worker afterwards.
          * `[ ]`   Purpose retired: retrieval and embedding for a compression path that scores by `candidateTokens × importance`, and a second process's collaborators carried on this process's root.
       * `[ ]`   Confirm:
-         * `[ ]`   Every member the params literal supplies is declared by `JobContextParams` as of the `createJobContext` node, and every member that type declares is supplied — the literal and the type are checked against each other in both directions.
+         * `[ ]`   Every member the params literal supplies is declared by `JobContextParams` as of the `createJobContext` node, and every member that type declares is supplied — the literal and the type are checked against each other in both directions. `planComplexStage` on that type carries this root's unbound implementation against the contract the `planComplexStage` node retyped it to.
          * `[ ]`   No reverse dependency: no module this root imports imports this file.
          * `[ ]`   `getAiProviderAdapter` stays imported — the params literal still supplies it — while the `embeddingAdapter` this file built with it goes.
       * `[ ]`   `context_slice`
@@ -2701,13 +3016,15 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   New case: an `ai_providers` read that returns an error reaches the terminal write and calls `deps.retryJob` zero times.
       * `[ ]`   New case: the provider read happens on the failure path only — a job that reports success queries `ai_providers` zero times.
       * `[ ]`   New case: a `processJob` returning its success arm writes no row and sends no failure notification.
-      * `[ ]`   New case: `defaultProcessors` carries the five implementations themselves — each member is identical to the imported function, not a closure around it.
+      * `[ ]`   New case: `defaultProcessors` carries the four implementations themselves — each member is identical to the function imported from that module's provides, not a closure around it — and declares no `planComplexStage` member.
+      * `[ ]`   Every `createMockJobProcessors` usage becomes `buildIJobProcessors` from `processJob.provides.ts`, with the runner's spy facility applied at the call site where a case asserts an invocation.
       * `[ ]`   New case: the params literal `createDialecticWorkerDeps` hands the factory carries none of `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` or `debitTokens`, and carries each of the eleven added members.
       * `[ ]`   New case: `tokenizerDeps.getEncoding` throws on an unknown encoding name and returns an encoder for a known one, and `tokenizerDeps.countTokensAnthropic` is the real counter — the proof no placeholder tokenizer is supplied at this root.
       * `[ ]`   The existing NSF, validation, claim-failure and started-notification cases keep their arrangements and assertions.
 
    * `[ ]`   `index.nsf-pause.integration.test.ts`
       * `[ ]`   Its `handleJob` calls drop the `authToken` argument; every `pauseJobsForNsf` arrangement and assertion is unchanged, and a case asserts the NSF path still returns before the retry branch is reached.
+      * `[ ]`   Every `createMockJobProcessors` usage becomes `buildIJobProcessors` from `processJob.provides.ts`, with the runner's spy facility applied at the call site where a case asserts an invocation.
 
    * `[ ]`   `index.ts`
       * `[ ]`   Deleted from `createDialecticWorkerDeps`: the `is_default_embedding` provider read and its throw, the `OPENAI_API_KEY` read and its throw, the `embeddingAdapter` construction and its throw, and the `embeddingClient`, `indexingService` and `ragService` constructions.
@@ -2716,7 +3033,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   The `createJobContext` params literal assigns `gatherArtifacts: gatherArtifacts`, `enqueueModelCall: enqueueModelCall` and `prepareModelJob: prepareModelJob` — the unbound implementations — and gains `compressPrompt`, `calculateAffordability`, `enqueueCompressJobs`, `getSortedCompressionCandidates`, `applyCompressionOverlay`, `textSplitter`, `constructStoragePath`, `tokenizerDeps`, `netlifyQueueUrl`, `netlifyApiKey` and `apiKeyForProvider`. It loses `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens`, and the seven imports that served the last seven.
       * `[ ]`   `tokenizerDeps` is constructed above the return as a `CountTokensDeps` literal carrying the guarded `getEncoding` closure, `countTokensAnthropic` and `logger`.
       * `[ ]`   The `retryJob` import moves from `./retryJob.ts` to `./retryJob/retryJob.ts`, and the files `dialectic-worker/retryJob.ts` and `dialectic-worker/retryJob.test.ts` are deleted.
-      * `[ ]`   `defaultProcessors` becomes `{ processSimpleJob, processComplexJob, planComplexStage, processRenderJob, processCompressJob }`; all five adapter closures are deleted.
+      * `[ ]`   `defaultProcessors` becomes `{ processSimpleJob, processComplexJob, processRenderJob, processCompressJob }`; all five adapter closures are deleted, the `planComplexStage` one leaving with the registry member it supplied. Each of the six implementation imports, and the `processJob` import, moves to that module's provides barrel, and `IJobProcessors` is imported from `processJob.provides.ts` in place of `dialectic-service/dialectic.interface.ts`.
       * `[ ]`   `handleJob` drops its `authToken` parameter and the `serve` call site drops the argument; the `Authorization` header read and its 401 stay.
       * `[ ]`   `handleJob` gains a local `const handleFailure = async (error: Error): Promise<void> => { … }` declared above the `try`, holding the NSF branch, the retry branch and the terminal path, assembled from the statements the `catch` holds today plus the retry branch this node adds.
       * `[ ]`   The `processJob` call takes its three arguments, its result is narrowed with `isProcessJobErrorReturn`, and the error arm calls `await handleFailure(result.error)`. The `catch` derives its `Error` as it does today and calls `await handleFailure(error)`; every statement it held moves into that closure.
@@ -2743,7 +3060,8 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   The params literal carries every member `JobContextParams` declares and none it does not, with the eleven added members present and the ten retired members absent — unit test, exhaustive membership assertions.
       * `[ ]`   `tokenizerDeps` supplies the real tiktoken and Anthropic counters, and rejects an unknown encoding name — unit test.
       * `[ ]`   `textSplitter` implements the `ITextSplitter` that `_shared/utils/text_splitter.interface.ts` declares — proven by the compiler, the params literal being typed by `JobContextParams`.
-      * `[ ]`   `defaultProcessors` carries the five implementations directly, each satisfying its own reshaped `Fn` type — proven by the compiler and by a unit identity assertion per member.
+      * `[ ]`   `defaultProcessors` carries the four implementations directly, each satisfying its own reshaped `Fn` type and declaring no `planComplexStage` member — proven by the compiler and by a unit identity assertion per member.
+      * `[ ]`   Every processor, the dispatcher and `IJobProcessors` are imported from a provides barrel, and no implementation file of another module is imported directly — proven by the compiler.
       * `[ ]`   `handleJob` narrows `processJob`'s return and writes no row on the success arm — unit test.
       * `[ ]`   A failure on a row with attempts remaining dispatches `retryJob` exactly once with a one-element `failedAttempts` array carrying the provider row's `api_identifier`, and writes no terminal status — unit test and integration test.
       * `[ ]`   A failure on a row with no attempts remaining writes `status: 'failed'` with its two notifications and dispatches no retry — unit test and integration test, arranged beside the case above.

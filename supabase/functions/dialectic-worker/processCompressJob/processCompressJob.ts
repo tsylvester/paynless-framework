@@ -2,7 +2,7 @@ import { FileType } from "../../_shared/types/file_manager.types.ts";
 import type { PathContext } from "../../_shared/types/file_manager.types.ts";
 import type { PostgrestError } from "npm:@supabase/supabase-js@2";
 import type { Tables, TablesUpdate } from "../../types_db.ts";
-import type { DialecticRecipeStep, PromptConstructionPayload } from "../../dialectic-service/dialectic.interface.ts";
+import type { DialecticJobRow, DialecticRecipeStep, PromptConstructionPayload } from "../../dialectic-service/dialectic.interface.ts";
 import type { ConstructedPath } from "../../_shared/utils/path_constructor.ts";
 import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import { isOutputRule } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
@@ -24,22 +24,32 @@ import {
     ProcessCompressJobError,
     ProcessCompressJobFn,
 } from "./processCompressJob.interface.ts";
+import { isProcessCompressJobPayload } from "./processCompressJob.guard.ts";
 
 export const processCompressJob: ProcessCompressJobFn = async (
     deps,
     params,
     payload,
 ) => {
+    // Entry — narrow the payload wrapper
+    if (!isProcessCompressJobPayload(payload)) {
+        return {
+            error: new ProcessCompressJobError("Invalid process compress job payload"),
+            retriable: false,
+        };
+    }
+    const job: DialecticJobRow = payload.job;
+
     // Entry — narrow the job's payload content
     let compressPayload: DialecticCompressJobPayload;
     try {
-        if (!isDialecticCompressJobPayload(payload.job.payload)) {
+        if (!isDialecticCompressJobPayload(job.payload)) {
             return {
                 error: new ProcessCompressJobError("Invalid compress payload"),
                 retriable: false,
             };
         }
-        compressPayload = payload.job.payload;
+        compressPayload = job.payload;
     } catch (err) {
         const error: Error = err instanceof Error
             ? err
@@ -95,7 +105,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
         const { error: updateError } = await params.dbClient
             .from("dialectic_generation_jobs")
             .update(updatePayload)
-            .eq("id", payload.job.id);
+            .eq("id", job.id);
 
         if (updateError) {
             return { error: updateError, retriable: true };
@@ -304,13 +314,13 @@ export const processCompressJob: ProcessCompressJobFn = async (
         sourceId: compressPayload.sourceId,
         role: compressPayload.role,
         modelSlug: compressPayload.model_slug,
-        userId: payload.job.user_id,
-        attemptCount: payload.job.attempt_count,
+        userId: job.user_id,
+        attemptCount: job.attempt_count,
     };
 
     let assembled: AssembledPrompt;
     if (typeof compressPayload.continuation_count === "number" && compressPayload.continuation_count >= 1) {
-        const continuationResult = await deps.assembleContinuationPrompt(payload.job);
+        const continuationResult = await deps.assembleContinuationPrompt(job);
         if (isAssembleContinuationPromptErrorReturn(continuationResult)) {
             return { error: continuationResult.error, retriable: continuationResult.retriable };
         }
@@ -338,7 +348,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
         dbClient: params.dbClient,
     };
     const dispatchPayload: PrepareModelJobPayload = {
-        job: payload.job,
+        job: job,
         providerRow,
         promptConstructionPayload,
     };

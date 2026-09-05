@@ -1,4 +1,5 @@
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isDialecticJobRow } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import type {
     BoundProcessCompressJobFn,
     ProcessCompressJobDeps,
@@ -78,7 +79,7 @@ export function isProcessCompressJobPayload(
     if (!isRecord(value)) {
         return false;
     }
-    if (!("job" in value) || !isRecord(value.job)) {
+    if (!("job" in value) || !isDialecticJobRow(value.job)) {
         return false;
     }
     return true;

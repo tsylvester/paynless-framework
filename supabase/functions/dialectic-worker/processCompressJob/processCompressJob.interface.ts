@@ -4,7 +4,7 @@ import type { ILogger } from "../../_shared/types.ts";
 import type { ConstructStoragePathFn } from "../../_shared/utils/path_constructor.types.ts";
 import type { BoundAssembleCompressionPromptFn, AssembleCompressionPromptError } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import type { BoundAssembleContinuationPromptFn } from "../../_shared/prompt-assembler/prompt-assembler.interface.ts";
-import type { BoundPrepareModelJobFn } from "../createJobContext/JobContext.interface.ts";
+import type { BoundPrepareModelJobFn } from "../prepareModelJob/prepareModelJob.interface.ts";
 import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 
 export interface ProcessCompressJobDeps {
@@ -46,10 +46,10 @@ export type ProcessCompressJobReturn =
 export type ProcessCompressJobFn = (
     deps: ProcessCompressJobDeps,
     params: ProcessCompressJobParams,
-    payload: ProcessCompressJobPayload,
+    payload: unknown,
 ) => Promise<ProcessCompressJobReturn>;
 
 export type BoundProcessCompressJobFn = (
     params: ProcessCompressJobParams,
-    payload: ProcessCompressJobPayload,
+    payload: unknown,
 ) => Promise<ProcessCompressJobReturn>;

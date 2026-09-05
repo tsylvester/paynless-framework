@@ -23,6 +23,7 @@ import {
   mockBoundProcessCompressJob,
   mockProcessCompressJob,
 } from "./processCompressJob.mock.ts";
+import { invalidateDialecticJobRow } from "../../_shared/dialectic.mock.ts";
 
 // ── isProcessCompressJobDeps ──────────────────────────────────────────────────
 
@@ -137,6 +138,17 @@ Deno.test("isProcessCompressJobPayload rejects non-objects", () => {
 Deno.test("isProcessCompressJobPayload rejects corrupted job", () => {
   assertEquals(isProcessCompressJobPayload(invalidateProcessCompressJobPayload({ job: null })), false);
   assertEquals(isProcessCompressJobPayload(invalidateProcessCompressJobPayload({ job: "not-a-record" })), false);
+});
+
+/** isProcessCompressJobPayload rejects a job that is a record but not a DialecticJobRow. */
+Deno.test("isProcessCompressJobPayload rejects a job that is a record but not a DialecticJobRow", () => {
+  const corruptedJob = invalidateDialecticJobRow({ id: null });
+  assertEquals(isProcessCompressJobPayload({ job: corruptedJob }), false);
+});
+
+/** isProcessCompressJobPayload accepts the builder's valid default alongside the record-but-not-DialecticJobRow rejection. */
+Deno.test("isProcessCompressJobPayload accepts the builder's valid default alongside the record rejection", () => {
+  assertEquals(isProcessCompressJobPayload(buildProcessCompressJobPayload()), true);
 });
 
 /** isProcessCompressJobPayload rejects omitted job. */

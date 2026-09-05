@@ -15,11 +15,57 @@ import type { DialecticJobRow } from "../../dialectic-service/dialectic.interfac
 import type { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from "../prepareModelJob/prepareModelJob.interface.ts";
 import { buildPrepareModelJobQueuedReturn, buildPrepareModelJobPendingReturn, buildPrepareModelJobErrorReturn } from "../prepareModelJob/prepareModelJob.mock.ts";
 import { processCompressJob } from "./processCompressJob.ts";
-import { buildProcessCompressJobDeps, buildProcessCompressJobParams, buildProcessCompressJobPayload } from "./processCompressJob.mock.ts";
+import { buildProcessCompressJobDeps, buildProcessCompressJobParams, buildProcessCompressJobPayload, invalidateProcessCompressJobPayload } from "./processCompressJob.mock.ts";
 import { ProcessCompressJobError } from "./processCompressJob.interface.ts";
 import type { ProcessCompressJobReturn } from "./processCompressJob.interface.ts";
 
 // ── Entry narrowing ───────────────────────────────────────────────────────────
+
+/**
+ * Contract: a payload that is not a ProcessCompressJobPayload returns the error arm
+ *   with retriable: false, calls no dependency and writes no row.
+ * Arrange: a payload from invalidateProcessCompressJobPayload({ job: null }), failing
+ *   isProcessCompressJobPayload at the entry guard; spied deps and a mock Supabase
+ *   client.
+ * Act:     processCompressJob with the spied deps, params, and the invalid payload.
+ * Assert:  the result is the error arm with retriable false; no assembler, dispatcher,
+ *   or constructStoragePath call is made; no dialectic_generation_jobs update is written.
+ */
+Deno.test("processCompressJob: invalid entry payload returns non-retriable error, calls no dependency and writes no row", async () => {
+    // Arrange
+    const payload = invalidateProcessCompressJobPayload({ job: null });
+    const mockSetup = createMockSupabaseClient("process-compress-job");
+    const params = buildProcessCompressJobParams({
+        dbClient: mockSetup.client as unknown as SupabaseClient,
+    });
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const continuationSpy = spy(mockBoundAssembleContinuationPrompt);
+    const prepareModelJobSpy = spy(async (_p: PrepareModelJobParams, _pl: PrepareModelJobPayload): Promise<PrepareModelJobReturn> => buildPrepareModelJobQueuedReturn());
+    const baseDeps = buildProcessCompressJobDeps();
+    const constructStoragePathSpy = spy(baseDeps.constructStoragePath);
+    const deps = buildProcessCompressJobDeps({
+        assembleCompressionPrompt: compressionSpy,
+        assembleContinuationPrompt: continuationSpy,
+        prepareModelJob: prepareModelJobSpy,
+        constructStoragePath: constructStoragePathSpy,
+    });
+
+    // Act
+    const result: ProcessCompressJobReturn = await processCompressJob(deps, params, payload);
+
+    // Assert
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+        assertEquals(result.retriable, false);
+    }
+    assertEquals(compressionSpy.calls.length, 0);
+    assertEquals(continuationSpy.calls.length, 0);
+    assertEquals(prepareModelJobSpy.calls.length, 0);
+    assertEquals(constructStoragePathSpy.calls.length, 0);
+    const updateCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+    assertExists(updateCalls);
+    assertEquals(updateCalls.callCount, 0);
+});
 
 /**
  * Contract: a payload.job.payload failing isDialecticCompressJobPayload surfaces

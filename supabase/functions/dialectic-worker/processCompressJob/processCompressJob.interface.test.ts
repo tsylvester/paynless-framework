@@ -11,7 +11,7 @@ import type {
 } from "./processCompressJob.interface.ts";
 import type { AssembleCompressionPromptError } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import type { FileManagerError } from "../../_shared/types/file_manager.types.ts";
-import type { BoundPrepareModelJobFn } from "../createJobContext/JobContext.interface.ts";
+import type { BoundPrepareModelJobFn } from "../prepareModelJob/prepareModelJob.interface.ts";
 
 Deno.test(
     "ProcessCompressJobDeps declares five dependency keys",
@@ -23,7 +23,11 @@ Deno.test(
             constructStoragePath: true,
             logger: true,
         };
-        assertEquals(Object.keys(surface).length, 5);
+        assertEquals(surface.assembleCompressionPrompt, true);
+        assertEquals(surface.assembleContinuationPrompt, true);
+        assertEquals(surface.prepareModelJob, true);
+        assertEquals(surface.constructStoragePath, true);
+        assertEquals(surface.logger, true);
     },
 );
 
@@ -33,7 +37,7 @@ Deno.test(
         const surface: Record<keyof ProcessCompressJobParams, true> = {
             dbClient: true,
         };
-        assertEquals(Object.keys(surface).length, 1);
+        assertEquals(surface.dbClient, true);
     },
 );
 
@@ -43,7 +47,7 @@ Deno.test(
         const surface: Record<keyof ProcessCompressJobPayload, true> = {
             job: true,
         };
-        assertEquals(Object.keys(surface).length, 1);
+        assertEquals(surface.job, true);
     },
 );
 

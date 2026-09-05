@@ -33,6 +33,7 @@ import {
   buildDialecticJobRow,
   buildDialecticStageRecipeStep,
   buildDialecticRecipeTemplateStep,
+  buildDialecticExecuteJobPayload,
   buildOutputRule,
   buildStageWithRecipeSteps,
 } from "../../_shared/dialectic.mock.ts";
@@ -313,7 +314,7 @@ async function runSpawnProcessSeam(
   const { continuation_count, ...victimForEnqueue } = victimPayload;
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
 
-  const parentPayload = buildDialecticCompressJobPayload({ output_type });
+  const parentPayload = buildDialecticExecuteJobPayload({ output_type });
   if (!isJson(parentPayload)) {
     throw new Error("Test setup failed: parent payload is not Json-compatible.");
   }
@@ -469,7 +470,7 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
   });
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
 
-  const parentPayload = buildDialecticCompressJobPayload({ output_type: FileType.business_case });
+  const parentPayload = buildDialecticExecuteJobPayload({ output_type: FileType.business_case });
   if (!isJson(parentPayload)) {
     throw new Error("Test setup failed: parent payload is not Json-compatible.");
   }
@@ -547,7 +548,7 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
 
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
 
-  const parentPayload = buildDialecticCompressJobPayload({ output_type: FileType.business_case });
+  const parentPayload = buildDialecticExecuteJobPayload({ output_type: FileType.business_case });
   if (!isJson(parentPayload)) {
     throw new Error("Test setup failed: parent payload is not Json-compatible.");
   }
