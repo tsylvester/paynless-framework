@@ -1,13 +1,21 @@
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import { isAiModelExtendedConfig, isChatApiRequest } from "../../_shared/utils/type-guards/type_guards.chat.ts";
+import { isAiModelExtendedConfig, isChatApiRequest, isSelectedAiProvider } from "../../_shared/utils/type-guards/type_guards.chat.ts";
+import { isDialecticJobRow } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isUserConfig } from "../calculateAffordability/calculateAffordability.provides.ts";
 import type {
   AiStreamEventBody,
   AiStreamEventData,
   EnqueueModelCallDeps,
   EnqueueModelCallErrorReturn,
+  EnqueueModelCallEventSizeErrorReturn,
+  EnqueueModelCallJobRowErrorReturn,
   EnqueueModelCallParams,
   EnqueueModelCallPayload,
+  EnqueueModelCallPreparationErrorReturn,
+  EnqueueModelCallPreparationFailure,
+  EnqueueModelCallQueueFailure,
+  EnqueueModelCallQueueRejectedErrorReturn,
+  EnqueueModelCallQueueUnreachableErrorReturn,
   EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
 
@@ -56,10 +64,6 @@ export function isEnqueueModelCallParams(
   }
   const keys: (keyof EnqueueModelCallParams)[] = [
     "dbClient",
-    "job",
-    "providerRow",
-    "userAuthToken",
-    "userConfig",
   ];
   for (let i = 0; i < keys.length; i++) {
     const key: keyof EnqueueModelCallParams = keys[i];
@@ -68,18 +72,6 @@ export function isEnqueueModelCallParams(
     }
   }
   if (!isRecord(v.dbClient)) {
-    return false;
-  }
-  if (!isRecord(v.job)) {
-    return false;
-  }
-  if (!isRecord(v.providerRow)) {
-    return false;
-  }
-  if (typeof v.userAuthToken !== "string") {
-    return false;
-  }
-  if (!isRecord(v.userConfig)) {
     return false;
   }
   return true;
@@ -91,13 +83,32 @@ export function isEnqueueModelCallPayload(
   if (!isRecord(v)) {
     return false;
   }
-  if (!("chatApiRequest" in v) || !isRecord(v.chatApiRequest)) {
+  const keys: (keyof EnqueueModelCallPayload)[] = [
+    "job",
+    "providerRow",
+    "userConfig",
+    "chatApiRequest",
+    "preflightInputTokens",
+  ];
+  for (let i = 0; i < keys.length; i++) {
+    const key: keyof EnqueueModelCallPayload = keys[i];
+    if (!(key in v)) {
+      return false;
+    }
+  }
+  if (!isDialecticJobRow(v.job)) {
     return false;
   }
-  if (
-    !("preflightInputTokens" in v) ||
-    typeof v.preflightInputTokens !== "number"
-  ) {
+  if (!isSelectedAiProvider(v.providerRow)) {
+    return false;
+  }
+  if (!isUserConfig(v.userConfig)) {
+    return false;
+  }
+  if (!isChatApiRequest(v.chatApiRequest)) {
+    return false;
+  }
+  if (typeof v.preflightInputTokens !== "number") {
     return false;
   }
   return true;
@@ -109,10 +120,140 @@ export function isEnqueueModelCallSuccessReturn(
   if (!isRecord(v)) {
     return false;
   }
-  if (!("queued" in v)) {
+  if (!("queued" in v) || v.queued !== true) {
     return false;
   }
-  if (v.queued !== true) {
+  if (!("jobId" in v) || typeof v.jobId !== "string") {
+    return false;
+  }
+  if (!("sig" in v) || typeof v.sig !== "string") {
+    return false;
+  }
+  if (!("preflightInputTokens" in v) || typeof v.preflightInputTokens !== "number") {
+    return false;
+  }
+  if (!("eventBodyBytes" in v) || typeof v.eventBodyBytes !== "number") {
+    return false;
+  }
+  if (!("queueStatus" in v) || typeof v.queueStatus !== "number") {
+    return false;
+  }
+  return true;
+}
+
+export function isEnqueueModelCallPreparationFailure(
+  v: unknown,
+): v is EnqueueModelCallPreparationFailure {
+  return (
+    v === "provider_config_invalid" ||
+    v === "api_key_missing" ||
+    v === "job_user_id_missing" ||
+    v === "job_signature_failed" ||
+    v === "job_payload_invalid" ||
+    v === "composed_payload_not_json"
+  );
+}
+
+export function isEnqueueModelCallQueueFailure(
+  v: unknown,
+): v is EnqueueModelCallQueueFailure {
+  return v === "queue_rejected" || v === "queue_unreachable";
+}
+
+export function isEnqueueModelCallPreparationErrorReturn(
+  v: unknown,
+): v is EnqueueModelCallPreparationErrorReturn {
+  if (!isRecord(v)) {
+    return false;
+  }
+  if (!("failure" in v) || !isEnqueueModelCallPreparationFailure(v.failure)) {
+    return false;
+  }
+  if (!("error" in v) || !(v.error instanceof Error)) {
+    return false;
+  }
+  if (!("retriable" in v) || v.retriable !== false) {
+    return false;
+  }
+  return true;
+}
+
+export function isEnqueueModelCallJobRowErrorReturn(
+  v: unknown,
+): v is EnqueueModelCallJobRowErrorReturn {
+  if (!isRecord(v)) {
+    return false;
+  }
+  if (!("failure" in v) || v.failure !== "job_row_update_failed") {
+    return false;
+  }
+  if (!("error" in v) || !(v.error instanceof Error)) {
+    return false;
+  }
+  if (!("retriable" in v) || v.retriable !== true) {
+    return false;
+  }
+  return true;
+}
+
+export function isEnqueueModelCallEventSizeErrorReturn(
+  v: unknown,
+): v is EnqueueModelCallEventSizeErrorReturn {
+  if (!isRecord(v)) {
+    return false;
+  }
+  if (!("failure" in v) || v.failure !== "event_body_too_large") {
+    return false;
+  }
+  if (!("error" in v) || !(v.error instanceof Error)) {
+    return false;
+  }
+  if (!("retriable" in v) || v.retriable !== false) {
+    return false;
+  }
+  if (!("eventBodyBytes" in v) || typeof v.eventBodyBytes !== "number") {
+    return false;
+  }
+  if (!("limitBytes" in v) || typeof v.limitBytes !== "number") {
+    return false;
+  }
+  return true;
+}
+
+export function isEnqueueModelCallQueueRejectedErrorReturn(
+  v: unknown,
+): v is EnqueueModelCallQueueRejectedErrorReturn {
+  if (!isRecord(v)) {
+    return false;
+  }
+  if (!("failure" in v) || v.failure !== "queue_rejected") {
+    return false;
+  }
+  if (!("error" in v) || !(v.error instanceof Error)) {
+    return false;
+  }
+  if (!("retriable" in v) || v.retriable !== true) {
+    return false;
+  }
+  if (!("queueStatus" in v) || typeof v.queueStatus !== "number") {
+    return false;
+  }
+  return true;
+}
+
+export function isEnqueueModelCallQueueUnreachableErrorReturn(
+  v: unknown,
+): v is EnqueueModelCallQueueUnreachableErrorReturn {
+  if (!isRecord(v)) {
+    return false;
+  }
+  if (!("failure" in v) || v.failure !== "queue_unreachable") {
+    return false;
+  }
+  if (!("error" in v) || !(v.error instanceof Error)) {
+    return false;
+  }
+  if (!("retriable" in v) || v.retriable !== true) {
     return false;
   }
   return true;
@@ -121,16 +262,22 @@ export function isEnqueueModelCallSuccessReturn(
 export function isEnqueueModelCallErrorReturn(
   v: unknown,
 ): v is EnqueueModelCallErrorReturn {
-  if (!isRecord(v)) {
-    return false;
+  if (isEnqueueModelCallPreparationErrorReturn(v)) {
+    return true;
   }
-  if (!("error" in v) || !(v.error instanceof Error)) {
-    return false;
+  if (isEnqueueModelCallJobRowErrorReturn(v)) {
+    return true;
   }
-  if (!("retriable" in v) || typeof v.retriable !== "boolean") {
-    return false;
+  if (isEnqueueModelCallEventSizeErrorReturn(v)) {
+    return true;
   }
-  return true;
+  if (isEnqueueModelCallQueueRejectedErrorReturn(v)) {
+    return true;
+  }
+  if (isEnqueueModelCallQueueUnreachableErrorReturn(v)) {
+    return true;
+  }
+  return false;
 }
 
 export function isAiStreamEventData(v: unknown): v is AiStreamEventData {

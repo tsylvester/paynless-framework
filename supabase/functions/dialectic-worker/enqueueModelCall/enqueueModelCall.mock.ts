@@ -4,23 +4,26 @@ import type { AiModelExtendedConfig, ApiKeyForProviderFn, ChatApiRequest } from 
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import {
     createMockSupabaseClient,
-    type MockSupabaseClientSetup,
 } from "../../_shared/supabase.mock.ts";
 import type {
     AiStreamEventBody,
     AiStreamEventData,
     BoundEnqueueModelCallFn,
     EnqueueModelCallDeps,
-    EnqueueModelCallErrorReturn,
+    EnqueueModelCallEventSizeErrorReturn,
     EnqueueModelCallFn,
+    EnqueueModelCallJobRowErrorReturn,
     EnqueueModelCallParams,
     EnqueueModelCallPayload,
+    EnqueueModelCallPreparationErrorReturn,
+    EnqueueModelCallQueueRejectedErrorReturn,
+    EnqueueModelCallQueueUnreachableErrorReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
 import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
 import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
 import { buildDialecticJobRow, buildDialecticExecuteJobPayload } from "../../_shared/dialectic.mock.ts";
-import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts"
+import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
 
 export type EnqueueModelCallDepsOverrides = Partial<EnqueueModelCallDeps>;
 
@@ -30,7 +33,19 @@ export type EnqueueModelCallPayloadOverrides = Partial<EnqueueModelCallPayload>;
 
 export type EnqueueModelCallSuccessReturnOverrides = Partial<EnqueueModelCallSuccessReturn>;
 
-export type EnqueueModelCallErrorReturnOverrides = Partial<EnqueueModelCallErrorReturn>;
+export type EnqueueModelCallPreparationErrorReturnOverrides = Partial<EnqueueModelCallPreparationErrorReturn>;
+
+export type EnqueueModelCallJobRowErrorReturnOverrides = Partial<EnqueueModelCallJobRowErrorReturn>;
+
+export type EnqueueModelCallEventSizeErrorReturnOverrides = Partial<EnqueueModelCallEventSizeErrorReturn>;
+
+export type EnqueueModelCallQueueRejectedErrorReturnOverrides = Partial<EnqueueModelCallQueueRejectedErrorReturn>;
+
+export type EnqueueModelCallQueueUnreachableErrorReturnOverrides = Partial<EnqueueModelCallQueueUnreachableErrorReturn>;
+
+export type AiStreamEventDataOverrides = Partial<AiStreamEventData>;
+
+export type AiStreamEventBodyOverrides = Partial<AiStreamEventBody>;
 
 export type EnqueueModelCallDepsCorruptions = {
     [K in keyof EnqueueModelCallDeps]?: unknown;
@@ -48,8 +63,24 @@ export type EnqueueModelCallSuccessReturnCorruptions = {
     [K in keyof EnqueueModelCallSuccessReturn]?: unknown;
 };
 
-export type EnqueueModelCallErrorReturnCorruptions = {
-    [K in keyof EnqueueModelCallErrorReturn]?: unknown;
+export type EnqueueModelCallPreparationErrorReturnCorruptions = {
+    [K in keyof EnqueueModelCallPreparationErrorReturn]?: unknown;
+};
+
+export type EnqueueModelCallJobRowErrorReturnCorruptions = {
+    [K in keyof EnqueueModelCallJobRowErrorReturn]?: unknown;
+};
+
+export type EnqueueModelCallEventSizeErrorReturnCorruptions = {
+    [K in keyof EnqueueModelCallEventSizeErrorReturn]?: unknown;
+};
+
+export type EnqueueModelCallQueueRejectedErrorReturnCorruptions = {
+    [K in keyof EnqueueModelCallQueueRejectedErrorReturn]?: unknown;
+};
+
+export type EnqueueModelCallQueueUnreachableErrorReturnCorruptions = {
+    [K in keyof EnqueueModelCallQueueUnreachableErrorReturn]?: unknown;
 };
 
 export type AiStreamEventDataCorruptions = {
@@ -58,13 +89,6 @@ export type AiStreamEventDataCorruptions = {
 
 export type AiStreamEventBodyCorruptions = {
     [K in keyof AiStreamEventBody]?: unknown;
-};
-
-export type CreateMockEnqueueModelCallParamsOptions = {
-    dbClient?: SupabaseClient<Database>;
-    supabaseUserId?: string;
-    supabaseConfig?: Parameters<typeof createMockSupabaseClient>[1];
-    mockSetup?: MockSupabaseClientSetup;
 };
 
 const defaultNetlifyQueueUrl: string =
@@ -78,7 +102,7 @@ const defaultApiKeyForProvider: ApiKeyForProviderFn = (
     return "mock-provider-api-key";
 };
 
-export function createMockEnqueueModelCallDeps(
+export function buildEnqueueModelCallDeps(
     overrides?: EnqueueModelCallDepsOverrides,
 ): EnqueueModelCallDeps {
     const logger: MockLogger = new MockLogger();
@@ -95,60 +119,42 @@ export function createMockEnqueueModelCallDeps(
 export function invalidateEnqueueModelCallDeps(
     corruptions: EnqueueModelCallDepsCorruptions,
 ): unknown {
-    return { ...createMockEnqueueModelCallDeps(), ...corruptions };
+    return { ...buildEnqueueModelCallDeps(), ...corruptions };
 }
 
-export function createMockEnqueueModelCallParams(
+export function buildEnqueueModelCallParams(
     overrides?: EnqueueModelCallParamsOverrides,
-    options?: CreateMockEnqueueModelCallParamsOptions,
 ): EnqueueModelCallParams {
-    let dbClient: SupabaseClient<Database>;
-    if (options?.mockSetup !== undefined) {
-        dbClient =
-            options.mockSetup.client as unknown as SupabaseClient<Database>;
-    } else if (options?.dbClient !== undefined) {
-        dbClient = options.dbClient;
-    } else if (options?.supabaseConfig !== undefined) {
-        const mockSetup: ReturnType<typeof createMockSupabaseClient> =
-            createMockSupabaseClient(
-                options.supabaseUserId,
-                options.supabaseConfig,
-            );
-        dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    } else {
-        const mockSetup: ReturnType<typeof createMockSupabaseClient> =
-            createMockSupabaseClient("enqueue-model-call-mock");
-        dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    }
-
-    const testPayload = buildDialecticExecuteJobPayload()
-    if(!isJson(testPayload)){
-        throw new Error ("Payload must be json compatible")
-    }
-    if(!testPayload){
-        throw new Error ("Payload must exist")
-    }
+    const mockSetup: ReturnType<typeof createMockSupabaseClient> =
+        createMockSupabaseClient("enqueue-model-call-mock");
+    const dbClient: SupabaseClient<Database> =
+        mockSetup.client as unknown as SupabaseClient<Database>;
     const base: EnqueueModelCallParams = {
         dbClient,
-        job: buildDialecticJobRow({ payload: testPayload }),
-        providerRow: buildMockProvider(),
-        userAuthToken: "mock-user-jwt",
-        userConfig: { tier_output_cap_tokens: null },
     };
-
     return overrides ? { ...base, ...overrides } : base;
 }
 
 export function invalidateEnqueueModelCallParams(
     corruptions: EnqueueModelCallParamsCorruptions,
 ): unknown {
-    return { ...createMockEnqueueModelCallParams(), ...corruptions };
+    return { ...buildEnqueueModelCallParams(), ...corruptions };
 }
 
-export function createMockEnqueueModelCallPayload(
+export function buildEnqueueModelCallPayload(
     overrides?: EnqueueModelCallPayloadOverrides,
 ): EnqueueModelCallPayload {
+    const testPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(testPayload)) {
+        throw new Error("Payload must be json compatible");
+    }
+    if (!testPayload) {
+        throw new Error("Payload must exist");
+    }
     const base: EnqueueModelCallPayload = {
+        job: buildDialecticJobRow({ payload: testPayload }),
+        providerRow: buildMockProvider(),
+        userConfig: { tier_output_cap_tokens: null },
         chatApiRequest: {
             message: "mock-message",
             providerId: "00000000-0000-4000-8000-000000000001",
@@ -162,41 +168,116 @@ export function createMockEnqueueModelCallPayload(
 export function invalidateEnqueueModelCallPayload(
     corruptions: EnqueueModelCallPayloadCorruptions,
 ): unknown {
-    return { ...createMockEnqueueModelCallPayload(), ...corruptions };
+    return { ...buildEnqueueModelCallPayload(), ...corruptions };
 }
 
-export function createMockEnqueueModelCallSuccessReturn(
+export function buildEnqueueModelCallSuccessReturn(
     overrides?: EnqueueModelCallSuccessReturnOverrides,
 ): EnqueueModelCallSuccessReturn {
-    const base: EnqueueModelCallSuccessReturn = { queued: true };
+    const base: EnqueueModelCallSuccessReturn = {
+        queued: true,
+        jobId: "mock-job-id",
+        sig: "mock-sig",
+        preflightInputTokens: 0,
+        eventBodyBytes: 0,
+        queueStatus: 200,
+    };
     return overrides ? { ...base, ...overrides } : base;
 }
 
 export function invalidateEnqueueModelCallSuccessReturn(
     corruptions: EnqueueModelCallSuccessReturnCorruptions,
 ): unknown {
-    return { ...createMockEnqueueModelCallSuccessReturn(), ...corruptions };
+    return { ...buildEnqueueModelCallSuccessReturn(), ...corruptions };
 }
 
-export function createMockEnqueueModelCallErrorReturn(
-    overrides?: EnqueueModelCallErrorReturnOverrides,
-): EnqueueModelCallErrorReturn {
-    const base: EnqueueModelCallErrorReturn = {
-        error: new Error("mock-enqueue-model-call-error"),
+export function buildEnqueueModelCallPreparationErrorReturn(
+    overrides?: EnqueueModelCallPreparationErrorReturnOverrides,
+): EnqueueModelCallPreparationErrorReturn {
+    const base: EnqueueModelCallPreparationErrorReturn = {
+        failure: "provider_config_invalid",
+        error: new Error("mock-preparation-error"),
         retriable: false,
     };
     return overrides ? { ...base, ...overrides } : base;
 }
 
-export function invalidateEnqueueModelCallErrorReturn(
-    corruptions: EnqueueModelCallErrorReturnCorruptions,
+export function invalidateEnqueueModelCallPreparationErrorReturn(
+    corruptions: EnqueueModelCallPreparationErrorReturnCorruptions,
 ): unknown {
-    return { ...createMockEnqueueModelCallErrorReturn(), ...corruptions };
+    return { ...buildEnqueueModelCallPreparationErrorReturn(), ...corruptions };
 }
 
-export type AiStreamEventDataOverrides = Partial<AiStreamEventData>;
+export function buildEnqueueModelCallJobRowErrorReturn(
+    overrides?: EnqueueModelCallJobRowErrorReturnOverrides,
+): EnqueueModelCallJobRowErrorReturn {
+    const base: EnqueueModelCallJobRowErrorReturn = {
+        failure: "job_row_update_failed",
+        error: new Error("mock-job-row-error"),
+        retriable: true,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
 
-export type AiStreamEventBodyOverrides = Partial<AiStreamEventBody>;
+export function invalidateEnqueueModelCallJobRowErrorReturn(
+    corruptions: EnqueueModelCallJobRowErrorReturnCorruptions,
+): unknown {
+    return { ...buildEnqueueModelCallJobRowErrorReturn(), ...corruptions };
+}
+
+export function buildEnqueueModelCallEventSizeErrorReturn(
+    overrides?: EnqueueModelCallEventSizeErrorReturnOverrides,
+): EnqueueModelCallEventSizeErrorReturn {
+    const base: EnqueueModelCallEventSizeErrorReturn = {
+        failure: "event_body_too_large",
+        error: new Error("mock-event-size-error"),
+        retriable: false,
+        eventBodyBytes: 600000,
+        limitBytes: 512000,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateEnqueueModelCallEventSizeErrorReturn(
+    corruptions: EnqueueModelCallEventSizeErrorReturnCorruptions,
+): unknown {
+    return { ...buildEnqueueModelCallEventSizeErrorReturn(), ...corruptions };
+}
+
+export function buildEnqueueModelCallQueueRejectedErrorReturn(
+    overrides?: EnqueueModelCallQueueRejectedErrorReturnOverrides,
+): EnqueueModelCallQueueRejectedErrorReturn {
+    const base: EnqueueModelCallQueueRejectedErrorReturn = {
+        failure: "queue_rejected",
+        error: new Error("mock-queue-rejected-error"),
+        retriable: true,
+        queueStatus: 503,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateEnqueueModelCallQueueRejectedErrorReturn(
+    corruptions: EnqueueModelCallQueueRejectedErrorReturnCorruptions,
+): unknown {
+    return { ...buildEnqueueModelCallQueueRejectedErrorReturn(), ...corruptions };
+}
+
+export function buildEnqueueModelCallQueueUnreachableErrorReturn(
+    overrides?: EnqueueModelCallQueueUnreachableErrorReturnOverrides,
+): EnqueueModelCallQueueUnreachableErrorReturn {
+    const base: EnqueueModelCallQueueUnreachableErrorReturn = {
+        failure: "queue_unreachable",
+        error: new Error("mock-queue-unreachable-error"),
+        retriable: true,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateEnqueueModelCallQueueUnreachableErrorReturn(
+    corruptions: EnqueueModelCallQueueUnreachableErrorReturnCorruptions,
+): unknown {
+    return { ...buildEnqueueModelCallQueueUnreachableErrorReturn(), ...corruptions };
+}
 
 const defaultAiStreamEventModelConfig: AiModelExtendedConfig = {
     api_identifier: "mock-ai-v1",
@@ -214,7 +295,7 @@ const defaultAiStreamEventChatApiRequest: ChatApiRequest = {
     promptId: "__none__",
 };
 
-export function createMockAiStreamEventData(
+export function buildAiStreamEventData(
     overrides?: AiStreamEventDataOverrides,
 ): AiStreamEventData {
     const base: AiStreamEventData = {
@@ -231,15 +312,15 @@ export function createMockAiStreamEventData(
 export function invalidateAiStreamEventData(
     corruptions: AiStreamEventDataCorruptions,
 ): unknown {
-    return { ...createMockAiStreamEventData(), ...corruptions };
+    return { ...buildAiStreamEventData(), ...corruptions };
 }
 
-export function createMockAiStreamEventBody(
+export function buildAiStreamEventBody(
     overrides?: AiStreamEventBodyOverrides,
 ): AiStreamEventBody {
     const base: AiStreamEventBody = {
         eventName: "ai-stream-background",
-        data: createMockAiStreamEventData(),
+        data: buildAiStreamEventData(),
     };
     return overrides ? { ...base, ...overrides } : base;
 }
@@ -247,20 +328,20 @@ export function createMockAiStreamEventBody(
 export function invalidateAiStreamEventBody(
     corruptions: AiStreamEventBodyCorruptions,
 ): unknown {
-    return { ...createMockAiStreamEventBody(), ...corruptions };
+    return { ...buildAiStreamEventBody(), ...corruptions };
 }
 
-export const mockEnqueueModelCallFn: EnqueueModelCallFn = async (
+export const mockEnqueueModelCall: EnqueueModelCallFn = async (
     _deps: EnqueueModelCallDeps,
     _params: EnqueueModelCallParams,
     _payload: EnqueueModelCallPayload,
-): Promise<EnqueueModelCallSuccessReturn | EnqueueModelCallErrorReturn> => {
-    return createMockEnqueueModelCallSuccessReturn();
+): Promise<EnqueueModelCallSuccessReturn> => {
+    return buildEnqueueModelCallSuccessReturn();
 };
 
-export const mockBoundEnqueueModelCallFn: BoundEnqueueModelCallFn = async (
+export const mockBoundEnqueueModelCall: BoundEnqueueModelCallFn = async (
     _params: EnqueueModelCallParams,
     _payload: EnqueueModelCallPayload,
-): Promise<EnqueueModelCallSuccessReturn | EnqueueModelCallErrorReturn> => {
-    return createMockEnqueueModelCallSuccessReturn();
+): Promise<EnqueueModelCallSuccessReturn> => {
+    return buildEnqueueModelCallSuccessReturn();
 };

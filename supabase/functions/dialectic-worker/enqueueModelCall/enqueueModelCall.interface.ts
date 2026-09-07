@@ -19,25 +19,76 @@ export interface EnqueueModelCallDeps {
 
 export interface EnqueueModelCallParams {
   dbClient: SupabaseClient<Database>;
-  job: DialecticJobRow;
-  providerRow: Tables<'ai_providers'>;
-  userAuthToken: string;
-  userConfig: UserConfig;
 }
 
 export interface EnqueueModelCallPayload {
+  job: DialecticJobRow;
+  providerRow: Tables<'ai_providers'>;
+  userConfig: UserConfig;
   chatApiRequest: ChatApiRequest;
   preflightInputTokens: number;
 }
 
 export type EnqueueModelCallSuccessReturn = {
   queued: true;
+  jobId: string;
+  sig: string;
+  preflightInputTokens: number;
+  eventBodyBytes: number;
+  queueStatus: number;
 };
 
-export type EnqueueModelCallErrorReturn = {
+export type EnqueueModelCallPreparationFailure =
+  | 'provider_config_invalid'
+  | 'api_key_missing'
+  | 'job_user_id_missing'
+  | 'job_signature_failed'
+  | 'job_payload_invalid'
+  | 'composed_payload_not_json';
+
+export type EnqueueModelCallQueueFailure =
+  | 'queue_rejected'
+  | 'queue_unreachable';
+
+export type EnqueueModelCallPreparationErrorReturn = {
+  failure: EnqueueModelCallPreparationFailure;
   error: Error;
-  retriable: boolean;
+  retriable: false;
 };
+
+export type EnqueueModelCallJobRowErrorReturn = {
+  failure: 'job_row_update_failed';
+  error: Error;
+  retriable: true;
+};
+
+export type EnqueueModelCallEventSizeErrorReturn = {
+  failure: 'event_body_too_large';
+  error: Error;
+  retriable: false;
+  eventBodyBytes: number;
+  limitBytes: number;
+};
+
+export type EnqueueModelCallQueueRejectedErrorReturn = {
+  failure: 'queue_rejected';
+  error: Error;
+  retriable: true;
+  queueStatus: number;
+};
+
+export type EnqueueModelCallQueueUnreachableErrorReturn = {
+  failure: 'queue_unreachable';
+  error: Error;
+  retriable: true;
+};
+
+export type EnqueueModelCallErrorReturn =
+  | EnqueueModelCallPreparationErrorReturn
+  | EnqueueModelCallJobRowErrorReturn
+  | EnqueueModelCallEventSizeErrorReturn
+  | EnqueueModelCallQueueRejectedErrorReturn
+  | EnqueueModelCallQueueUnreachableErrorReturn;
 
 export type EnqueueModelCallReturn =
   | EnqueueModelCallSuccessReturn

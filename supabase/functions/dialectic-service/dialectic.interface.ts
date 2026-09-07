@@ -1369,7 +1369,6 @@ export interface DialecticStepPlannerMetadata {
 	description?: string;
 	dependencies?: readonly string[];
 	parallel_successors?: readonly string[];
-	[key: string]: unknown;
 }
 
 /**

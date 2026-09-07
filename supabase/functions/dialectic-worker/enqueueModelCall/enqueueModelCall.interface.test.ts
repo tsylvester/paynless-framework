@@ -1,18 +1,26 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type {
     AiStreamEventBody,
     AiStreamEventData,
     BoundEnqueueModelCallFn,
     EnqueueModelCallDeps,
     EnqueueModelCallErrorReturn,
+    EnqueueModelCallEventSizeErrorReturn,
+    EnqueueModelCallFn,
+    EnqueueModelCallJobRowErrorReturn,
     EnqueueModelCallParams,
     EnqueueModelCallPayload,
+    EnqueueModelCallPreparationErrorReturn,
+    EnqueueModelCallPreparationFailure,
+    EnqueueModelCallQueueFailure,
+    EnqueueModelCallQueueRejectedErrorReturn,
+    EnqueueModelCallQueueUnreachableErrorReturn,
     EnqueueModelCallReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
 
 Deno.test(
-    "Contract: EnqueueModelCallDeps declares five dependency keys",
+    "EnqueueModelCallDeps declares five dependency keys",
     () => {
         const surface: Record<keyof EnqueueModelCallDeps, true> = {
             logger: true,
@@ -26,57 +34,248 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallParams declares five fields",
+    "EnqueueModelCallParams declares dbClient only",
     () => {
         const surface: Record<keyof EnqueueModelCallParams, true> = {
             dbClient: true,
+        };
+        assertEquals(surface.dbClient, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallPayload declares job, providerRow, userConfig, chatApiRequest and preflightInputTokens",
+    () => {
+        const surface: Record<keyof EnqueueModelCallPayload, true> = {
             job: true,
             providerRow: true,
-            userAuthToken: true,
             userConfig: true,
+            chatApiRequest: true,
+            preflightInputTokens: true,
         };
-        assertEquals(Object.keys(surface).length, 5);
+        assertEquals(surface.job, true);
+        assertEquals(surface.providerRow, true);
+        assertEquals(surface.userConfig, true);
+        assertEquals(surface.chatApiRequest, true);
+        assertEquals(surface.preflightInputTokens, true);
     },
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallPayload chatApiRequest and preflightInputTokens",
+    "EnqueueModelCallSuccessReturn queued true",
     () => {
-        const payload: EnqueueModelCallPayload = {
-            chatApiRequest: {
-                message: "m",
-                providerId: "00000000-0000-0000-0000-000000000001",
-                promptId: "__none__",
-            },
-            preflightInputTokens: 50,
+        const surface: Record<keyof EnqueueModelCallSuccessReturn, true> = {
+            queued: true,
+            jobId: true,
+            sig: true,
+            preflightInputTokens: true,
+            eventBodyBytes: true,
+            queueStatus: true,
         };
-        assertEquals(typeof payload.preflightInputTokens, "number");
-        assertEquals(typeof payload.chatApiRequest.message, "string");
+        assertEquals(surface.queued, true);
+        assertEquals(surface.jobId, true);
+        assertEquals(surface.sig, true);
+        assertEquals(surface.preflightInputTokens, true);
+        assertEquals(surface.eventBodyBytes, true);
+        assertEquals(surface.queueStatus, true);
     },
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallSuccessReturn queued true",
+    "EnqueueModelCallPreparationErrorReturn declares failure, error and retriable",
     () => {
-        const r: EnqueueModelCallSuccessReturn = { queued: true };
-        assertEquals(r.queued, true);
+        const surface: Record<keyof EnqueueModelCallPreparationErrorReturn, true> = {
+            failure: true,
+            error: true,
+            retriable: true,
+        };
+        assertEquals(surface.failure, true);
+        assertEquals(surface.error, true);
+        assertEquals(surface.retriable, true);
     },
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallErrorReturn has Error and retriable boolean",
+    "EnqueueModelCallJobRowErrorReturn declares failure, error and retriable",
     () => {
-        const err: EnqueueModelCallErrorReturn = {
+        const surface: Record<keyof EnqueueModelCallJobRowErrorReturn, true> = {
+            failure: true,
+            error: true,
+            retriable: true,
+        };
+        assertEquals(surface.failure, true);
+        assertEquals(surface.error, true);
+        assertEquals(surface.retriable, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallEventSizeErrorReturn declares failure, error, retriable, eventBodyBytes and limitBytes",
+    () => {
+        const surface: Record<keyof EnqueueModelCallEventSizeErrorReturn, true> = {
+            failure: true,
+            error: true,
+            retriable: true,
+            eventBodyBytes: true,
+            limitBytes: true,
+        };
+        assertEquals(surface.failure, true);
+        assertEquals(surface.error, true);
+        assertEquals(surface.retriable, true);
+        assertEquals(surface.eventBodyBytes, true);
+        assertEquals(surface.limitBytes, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallQueueRejectedErrorReturn declares failure, error, retriable and queueStatus",
+    () => {
+        const surface: Record<keyof EnqueueModelCallQueueRejectedErrorReturn, true> = {
+            failure: true,
+            error: true,
+            retriable: true,
+            queueStatus: true,
+        };
+        assertEquals(surface.failure, true);
+        assertEquals(surface.error, true);
+        assertEquals(surface.retriable, true);
+        assertEquals(surface.queueStatus, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallQueueUnreachableErrorReturn declares failure, error and retriable",
+    () => {
+        const surface: Record<keyof EnqueueModelCallQueueUnreachableErrorReturn, true> = {
+            failure: true,
+            error: true,
+            retriable: true,
+        };
+        assertEquals(surface.failure, true);
+        assertEquals(surface.error, true);
+        assertEquals(surface.retriable, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallPreparationErrorReturn is a member of EnqueueModelCallErrorReturn and EnqueueModelCallReturn",
+    () => {
+        const flavor: EnqueueModelCallPreparationErrorReturn = {
+            failure: "provider_config_invalid",
             error: new Error("x"),
             retriable: false,
         };
-        assertEquals(err.error instanceof Error, true);
-        assertEquals(typeof err.retriable, "boolean");
+        const errorArm: EnqueueModelCallErrorReturn = flavor;
+        const result: EnqueueModelCallReturn = errorArm;
+        assertEquals(result === flavor, true);
     },
 );
 
 Deno.test(
-    "Contract: AiStreamEventData declares six fields including sig not user_jwt",
+    "EnqueueModelCallJobRowErrorReturn is a member of EnqueueModelCallErrorReturn and EnqueueModelCallReturn",
+    () => {
+        const flavor: EnqueueModelCallJobRowErrorReturn = {
+            failure: "job_row_update_failed",
+            error: new Error("x"),
+            retriable: true,
+        };
+        const errorArm: EnqueueModelCallErrorReturn = flavor;
+        const result: EnqueueModelCallReturn = errorArm;
+        assertEquals(result === flavor, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallEventSizeErrorReturn is a member of EnqueueModelCallErrorReturn and EnqueueModelCallReturn",
+    () => {
+        const flavor: EnqueueModelCallEventSizeErrorReturn = {
+            failure: "event_body_too_large",
+            error: new Error("x"),
+            retriable: false,
+            eventBodyBytes: 600000,
+            limitBytes: 512000,
+        };
+        const errorArm: EnqueueModelCallErrorReturn = flavor;
+        const result: EnqueueModelCallReturn = errorArm;
+        assertEquals(result === flavor, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallQueueRejectedErrorReturn is a member of EnqueueModelCallErrorReturn and EnqueueModelCallReturn",
+    () => {
+        const flavor: EnqueueModelCallQueueRejectedErrorReturn = {
+            failure: "queue_rejected",
+            error: new Error("x"),
+            retriable: true,
+            queueStatus: 503,
+        };
+        const errorArm: EnqueueModelCallErrorReturn = flavor;
+        const result: EnqueueModelCallReturn = errorArm;
+        assertEquals(result === flavor, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallQueueUnreachableErrorReturn is a member of EnqueueModelCallErrorReturn and EnqueueModelCallReturn",
+    () => {
+        const flavor: EnqueueModelCallQueueUnreachableErrorReturn = {
+            failure: "queue_unreachable",
+            error: new Error("x"),
+            retriable: true,
+        };
+        const errorArm: EnqueueModelCallErrorReturn = flavor;
+        const result: EnqueueModelCallReturn = errorArm;
+        assertEquals(result === flavor, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallSuccessReturn is a member of EnqueueModelCallReturn",
+    () => {
+        const success: EnqueueModelCallSuccessReturn = {
+            queued: true,
+            jobId: "job-1",
+            sig: "sig-1",
+            preflightInputTokens: 0,
+            eventBodyBytes: 0,
+            queueStatus: 200,
+        };
+        const result: EnqueueModelCallReturn = success;
+        assertEquals(result === success, true);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallPreparationFailure admits its six string literals",
+    () => {
+        const f1: EnqueueModelCallPreparationFailure = "provider_config_invalid";
+        const f2: EnqueueModelCallPreparationFailure = "api_key_missing";
+        const f3: EnqueueModelCallPreparationFailure = "job_user_id_missing";
+        const f4: EnqueueModelCallPreparationFailure = "job_signature_failed";
+        const f5: EnqueueModelCallPreparationFailure = "job_payload_invalid";
+        const f6: EnqueueModelCallPreparationFailure = "composed_payload_not_json";
+        assertEquals(f1, "provider_config_invalid");
+        assertEquals(f2, "api_key_missing");
+        assertEquals(f3, "job_user_id_missing");
+        assertEquals(f4, "job_signature_failed");
+        assertEquals(f5, "job_payload_invalid");
+        assertEquals(f6, "composed_payload_not_json");
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallQueueFailure admits its two string literals",
+    () => {
+        const f1: EnqueueModelCallQueueFailure = "queue_rejected";
+        const f2: EnqueueModelCallQueueFailure = "queue_unreachable";
+        assertEquals(f1, "queue_rejected");
+        assertEquals(f2, "queue_unreachable");
+    },
+);
+
+Deno.test(
+    "AiStreamEventData declares six fields including sig not user_jwt",
     () => {
         const surface: Record<keyof AiStreamEventData, true> = {
             job_id: true,
@@ -91,7 +290,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: AiStreamEventBody declares eventName and data",
+    "AiStreamEventBody declares eventName and data",
     () => {
         const surface: Record<keyof AiStreamEventBody, true> = {
             eventName: true,
@@ -102,13 +301,20 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: BoundEnqueueModelCallFn signature",
+    "BoundEnqueueModelCallFn signature",
     () => {
         const bound: BoundEnqueueModelCallFn = async (
             _params: EnqueueModelCallParams,
             _payload: EnqueueModelCallPayload,
         ): Promise<EnqueueModelCallReturn> => {
-            const ok: EnqueueModelCallSuccessReturn = { queued: true };
+            const ok: EnqueueModelCallSuccessReturn = {
+                queued: true,
+                jobId: "job-1",
+                sig: "sig-1",
+                preflightInputTokens: 0,
+                eventBodyBytes: 0,
+                queueStatus: 200,
+            };
             return ok;
         };
         assertEquals(typeof bound, "function");
@@ -116,7 +322,24 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallDeps computeJobSig is typed as a function",
+    "EnqueueModelCallFn resolves to its declared return union",
+    () => {
+        const success: EnqueueModelCallSuccessReturn = {
+            queued: true,
+            jobId: "job-1",
+            sig: "sig-1",
+            preflightInputTokens: 0,
+            eventBodyBytes: 0,
+            queueStatus: 200,
+        };
+        const returned: ReturnType<EnqueueModelCallFn> = Promise.resolve(success);
+        const declared: Promise<EnqueueModelCallReturn> = returned;
+        assert(declared instanceof Promise);
+    },
+);
+
+Deno.test(
+    "EnqueueModelCallDeps computeJobSig is typed as a function",
     () => {
         const fn: EnqueueModelCallDeps["computeJobSig"] = async (
             _jobId: string,
@@ -128,7 +351,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallDeps invalid - missing computeJobSig",
+    "EnqueueModelCallDeps invalid - missing computeJobSig",
     () => {
         const required: (keyof EnqueueModelCallDeps)[] = [
             "logger",
@@ -143,7 +366,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: AiStreamEventData valid - has sig field and no user_jwt field",
+    "AiStreamEventData valid - has sig field and no user_jwt field",
     () => {
         const surface: Record<keyof AiStreamEventData, true> = {
             job_id: true,
@@ -159,12 +382,12 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallParams userConfig is UserConfig object shape",
+    "EnqueueModelCallPayload userConfig is UserConfig object shape",
     () => {
-        const uc: EnqueueModelCallParams["userConfig"] = {
+        const uc: EnqueueModelCallPayload["userConfig"] = {
             tier_output_cap_tokens: null,
         };
-        const uc2: EnqueueModelCallParams["userConfig"] = {
+        const uc2: EnqueueModelCallPayload["userConfig"] = {
             tier_output_cap_tokens: 32768,
         };
         assertEquals(uc.tier_output_cap_tokens, null);
@@ -173,7 +396,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: AiStreamEventData user_config is UserConfig object shape",
+    "AiStreamEventData user_config is UserConfig object shape",
     () => {
         const uc: AiStreamEventData["user_config"] = {
             tier_output_cap_tokens: null,
@@ -187,15 +410,15 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: userConfig and user_config accept tier_output_cap_tokens null",
+    "userConfig and user_config accept tier_output_cap_tokens null",
     () => {
-        const paramsUserConfig: EnqueueModelCallParams["userConfig"] = {
+        const payloadUserConfig: EnqueueModelCallPayload["userConfig"] = {
             tier_output_cap_tokens: null,
         };
         const eventUserConfig: AiStreamEventData["user_config"] = {
             tier_output_cap_tokens: null,
         };
-        assertEquals(paramsUserConfig.tier_output_cap_tokens, null);
+        assertEquals(payloadUserConfig.tier_output_cap_tokens, null);
         assertEquals(eventUserConfig.tier_output_cap_tokens, null);
     },
 );

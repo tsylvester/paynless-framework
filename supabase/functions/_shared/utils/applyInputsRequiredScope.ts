@@ -1,4 +1,4 @@
-import { ResourceDocument } from "../types.ts";
+import type { ResourceDocument } from './resolveCompressionSource/resolveCompressionSource.interface.ts';
 import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
 
 export function applyInputsRequiredScope(

@@ -775,6 +775,168 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   All existing unit test cases pass with the updated mock (two-argument function instead of three).
       * `[✅]`   The binding pattern matches the existing `processJob.ts` composition root — guarded `getEncoding`, real `countTokensAnthropic`, real `logger`.
 
+* `[✅]`   supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts **[BE] Report the dispatch on the success arm and name the failure on the error arm: carry the signature, preflight count, serialized size and queue status the function produced, split the single bare `Error` return into five discriminated flavors covering its ten failure sites, remove the two error-constructing ternaries, the throw used as local control flow and the re-throw that escapes the return union, move `job`, `providerRow` and `userConfig` to payload, delete the unread `userAuthToken`, and bring the mock file to the builder naming and single-overrides form**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve a success arm that reports nothing. The function computes a job signature, writes `preflight_input_tokens` onto the job row, serializes the event, measures it against the 500 KB limit and reads the queue's response status — then returns `{ queued: true }`. Every one of those facts is produced here and discarded here, so a caller that needs the signature, the size or the queue's status must re-derive what this function already had.
+      * `[✅]`   Solve an error arm that names nothing. Ten distinct failure sites return the same `{ error: Error; retriable: boolean }`. The queue-rejection site formats `response.status` into a message string and the size site formats the byte count into another, so a consumer recovers both the failure kind and its data by parsing text.
+      * `[✅]`   Solve error values produced by inference rather than declaration. Two `err instanceof Error ? err : new Error(String(err))` ternaries guess the error kind at the `computeJobSig` and `fetch` sites; a `throw new Error('isDialecticBaseJobPayload returned false')` is raised and caught three lines later only to be converted back into a return; and a bare `throw e` re-throws a non-`Error` out of a function whose declared contract is a `Success | Error` union.
+      * `[✅]`   Solve `EnqueueModelCallParams` carrying the data objects the body operates on: `job`, `providerRow` and `userConfig`.
+      * `[✅]`   Solve `userAuthToken`, declared on `EnqueueModelCallParams`, checked by `isEnqueueModelCallParams`, defaulted by the params builder, and read by no line of the implementation.
+      * `[✅]`   Solve a mock file outside the mock standard: `createMockEnqueueModelCall…` builders, `mockEnqueueModelCallFn` and `mockBoundEnqueueModelCallFn` function mocks, and a `CreateMockEnqueueModelCallParamsOptions` argument on the params builder.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `EnqueueModelCallSuccessReturn` keeps `queued: true` as its discriminant and carries the signature, the written preflight count, the serialized size and the queue's status.
+         * `[✅]`   `EnqueueModelCallErrorReturn` is a named union of five flavors, each discriminated by a `failure` member.
+         * `[✅]`   The queue-rejection flavor carries `response.status` as a number; the event-size flavor carries the measured byte count and the limit as numbers.
+         * `[✅]`   Every site that returns the error arm returns a flavor whose `failure` names that site.
+         * `[✅]`   The two error-constructing ternaries are replaced by the flavor each site owns, with the caught value carried on the flavor's `error` member.
+         * `[✅]`   The `isDialecticBaseJobPayload` failure returns its flavor directly; the raise-and-catch around it is deleted.
+         * `[✅]`   No `throw` remains as a path to a return value, and every path ends in a member of `EnqueueModelCallReturn`.
+         * `[✅]`   `EnqueueModelCallParams` declares `dbClient` only.
+         * `[✅]`   `EnqueueModelCallPayload` declares `job`, `providerRow`, `userConfig`, `chatApiRequest` and `preflightInputTokens`.
+         * `[✅]`   `userAuthToken` is absent from the interface, the guard, the mock and every call site.
+         * `[✅]`   Every mock symbol takes its production-derived name, and every builder takes one optional overrides object.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   Every existing log call keeps its message text, its context object and its position.
+         * `[✅]`   Every existing `retriable` value keeps its classification: the job-row update, the queue rejection and the unreachable queue stay `true`; the six preparation failures and the event-size failure stay `false`.
+         * `[✅]`   The `NETLIFY_MAX_EVENT_BYTES` constant, the update-before-fetch ordering, the `dialectic_generation_jobs` update shape (`status: 'queued'` plus the composed payload), the composed payload's contents, the event body shape and the fetch headers are unchanged.
+         * `[✅]`   `EnqueueModelCallDeps`, `EnqueueModelCallParams`, `EnqueueModelCallPayload`, `AiStreamEventData` and `AiStreamEventBody` are unchanged, and `AiStreamEventData` still carries no token count and no `user_jwt`.
+      * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test, unit test or integration test.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is an adapter at the process boundary: given a prepared request and the job it belongs to, record the job as queued and hand the call to the Netlify queue, reporting what was dispatched and what the queue said.
+      * `[✅]`   The role is correct because this is the only place that holds the computed signature, the serialized event and the queue's response together. A return that names its failure is what lets the runner and the dispatcher above it act on the failure kind without re-deriving it from text.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not resolve caps, wallets or affordability; `prepareModelJob` decides all three before calling this function.
+         * `[✅]`   Do not change what the event carries, what the row update writes, or the order of the two.
+         * `[✅]`   Do not add a retry, a notification or a status write beyond the existing `queued` update.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/enqueueModelCall` — signature computation, the job row's `queued` write, event serialization and size enforcement, and the queue POST.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   What was dispatched, and the facts this function produced while dispatching it.
+         * `[✅]`   Which of its own ten failure sites was reached, and the data that site holds.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   The content of the request, owned by `prepareModelJob`.
+         * `[✅]`   The queue's own processing of the event, owned by `netlifyResponse`.
+         * `[✅]`   The job's lifecycle after it is queued, owned by the runner in `dialectic-worker/index.ts`.
+
+   * `[✅]`   `enqueueModelCall.interface.test.ts`
+      * `[✅]`   The `EnqueueModelCallSuccessReturn queued true` case becomes a required-key surface record annotated with `EnqueueModelCallSuccessReturn`, over the members the interface element below declares.
+      * `[✅]`   The `EnqueueModelCallErrorReturn has Error and retriable boolean` case is replaced by one required-key surface record per error flavor, each annotated with that flavor's own exported name.
+      * `[✅]`   A membership case per error flavor proves the flavor assigns to `EnqueueModelCallErrorReturn` and that `EnqueueModelCallErrorReturn` assigns to `EnqueueModelCallReturn`; a membership case proves `EnqueueModelCallSuccessReturn` assigns to `EnqueueModelCallReturn`.
+      * `[✅]`   A case per failure alias assigns each of its admitted string literals to the alias.
+      * `[✅]`   `EnqueueModelCallParams declares five fields` becomes a required-key surface record over the single member the interface element declares on `EnqueueModelCallParams`, exhaustive in both directions, which is the proof `job`, `providerRow`, `userConfig` and `userAuthToken` have left it.
+      * `[✅]`   `EnqueueModelCallPayload chatApiRequest and preflightInputTokens` becomes a required-key surface record over the members the interface element declares on `EnqueueModelCallPayload`.
+      * `[✅]`   `EnqueueModelCallParams userConfig is UserConfig object shape` is retitled to the payload and annotates its witness with `EnqueueModelCallPayload['userConfig']`.
+      * `[✅]`   Every symbol the interface exports is imported by its production name and consumed by a proof block, and no imported symbol is left unconsumed.
+      * `[✅]`   The `EnqueueModelCallDeps declares five dependency keys`, `AiStreamEventData declares six fields including sig not user_jwt`, `AiStreamEventBody declares eventName and data`, `BoundEnqueueModelCallFn signature`, `EnqueueModelCallDeps computeJobSig is typed as a function`, `EnqueueModelCallDeps invalid - missing computeJobSig`, `AiStreamEventData valid - has sig field and no user_jwt field`, `AiStreamEventData user_config is UserConfig object shape` and `userConfig and user_config accept tier_output_cap_tokens null` cases keep their arrangements and assertions.
+
+   * `[✅]`   `enqueueModelCall.interface.ts`
+      * `[✅]`   `EnqueueModelCallSuccessReturn` declares `queued: true`, `jobId: string`, `sig: string`, `preflightInputTokens: number`, `eventBodyBytes: number` and `queueStatus: number`.
+      * `[✅]`   `EnqueueModelCallPreparationFailure` is declared as the string-literal alias admitting `'provider_config_invalid'`, `'api_key_missing'`, `'job_user_id_missing'`, `'job_signature_failed'`, `'job_payload_invalid'` and `'composed_payload_not_json'`.
+      * `[✅]`   `EnqueueModelCallQueueFailure` is declared as the string-literal alias admitting `'queue_rejected'` and `'queue_unreachable'`.
+      * `[✅]`   `EnqueueModelCallPreparationErrorReturn` declares `failure: EnqueueModelCallPreparationFailure`, `error: Error` and `retriable: false`.
+      * `[✅]`   `EnqueueModelCallJobRowErrorReturn` declares `failure: 'job_row_update_failed'`, `error: Error` and `retriable: true`.
+      * `[✅]`   `EnqueueModelCallEventSizeErrorReturn` declares `failure: 'event_body_too_large'`, `error: Error`, `retriable: false`, `eventBodyBytes: number` and `limitBytes: number`.
+      * `[✅]`   `EnqueueModelCallQueueRejectedErrorReturn` declares `failure: 'queue_rejected'`, `error: Error`, `retriable: true` and `queueStatus: number`.
+      * `[✅]`   `EnqueueModelCallQueueUnreachableErrorReturn` declares `failure: 'queue_unreachable'`, `error: Error` and `retriable: true`.
+      * `[✅]`   `EnqueueModelCallErrorReturn` becomes the union of those five flavors and keeps its exported name, so every consumer importing it continues to resolve.
+      * `[✅]`   `EnqueueModelCallReturn` stays the two-arm union of `EnqueueModelCallSuccessReturn` and `EnqueueModelCallErrorReturn`; every flavor is a member of an arm and none is hoisted beside the arms.
+      * `[✅]`   `EnqueueModelCallParams` declares `dbClient: SupabaseClient<Database>` and drops `job`, `providerRow`, `userConfig` and `userAuthToken`.
+      * `[✅]`   `EnqueueModelCallPayload` declares `job: DialecticJobRow`, `providerRow: Tables<'ai_providers'>`, `userConfig: UserConfig`, `chatApiRequest: ChatApiRequest` and `preflightInputTokens: number`.
+      * `[✅]`   The `DialecticJobRow`, `Tables` and `UserConfig` imports stay, now required by the payload rather than the params.
+      * `[✅]`   `EnqueueModelCallDeps`, `AiStreamEventData`, `AiStreamEventBody`, `EnqueueModelCallFn` and `BoundEnqueueModelCallFn` are unchanged.
+
+   * `[✅]`   `enqueueModelCall.interaction.spec`
+      * `[✅]`   Entry: `isAiModelExtendedConfig(payload.providerRow.config)` false → log `enqueueModelCall: invalid providerRow.config` with the config, return the preparation flavor with `failure: 'provider_config_invalid'` and the existing `Invalid providerRow.config: does not satisfy AiModelExtendedConfig` error. Nothing is written and no dependency is called.
+      * `[✅]`   API key: `deps.apiKeyForProvider(payload.providerRow.api_identifier)` falsy → log `enqueueModelCall: missing API key for provider` with the identifier, return the preparation flavor with `failure: 'api_key_missing'` and the existing `No API key found for provider: …` error.
+      * `[✅]`   Job owner: `payload.job.user_id` absent or not a string → log `enqueueModelCall: job.user_id is missing or not a string` with the value, return the preparation flavor with `failure: 'job_user_id_missing'` and the existing `job.user_id is required to compute the job signature` error. `deps.computeJobSig` is not called.
+      * `[✅]`   Signature: `deps.computeJobSig(payload.job.id, payload.job.user_id, payload.job.created_at)` throws → log `enqueueModelCall: computeJobSig threw` with the thrown value, return the preparation flavor with `failure: 'job_signature_failed'`. The thrown value is carried on `error` when it is an `Error` and wrapped in one naming this site when it is not; the branch is selected by what was caught, never by a ternary.
+      * `[✅]`   Payload proof: `isDialecticBaseJobPayload(payload.job.payload)` false → log `enqueueModelCall: job payload failed isDialecticBaseJobPayload` with the guard's diagnostic, return the preparation flavor with `failure: 'job_payload_invalid'`. The result is returned from the failing branch directly, and the enclosing `try`/`catch` around this block is deleted with the throw it existed to convert.
+      * `[✅]`   Payload composition: the proven payload spread with `preflight_input_tokens: payload.preflightInputTokens`, then `isJson` over the composed object. False → log `enqueueModelCall: composed payload is not valid Json`, return the preparation flavor with `failure: 'composed_payload_not_json'` and the existing `Composed payload is not valid Json.` error.
+      * `[✅]`   Job row write: the `dialectic_generation_jobs` update setting `status: 'queued'` and the composed payload, keyed on `payload.job.id`. A Postgrest error → log `enqueueModelCall: DB update failed` with the error, return the job-row flavor with `failure: 'job_row_update_failed'` and the existing `new Error(dbError.message)`. `fetch` is not called.
+      * `[✅]`   Event assembly and size: the `AiStreamEventData` and `AiStreamEventBody` literals are built from `payload.job.id`, `payload.providerRow.api_identifier`, the narrowed config, `payload.chatApiRequest`, the computed `sig` and `payload.userConfig`, and serialized once. The serialized length over `NETLIFY_MAX_EVENT_BYTES` → log `enqueueModelCall: event body exceeds 500 KB size limit` with the size and the limit, return the event-size flavor with `failure: 'event_body_too_large'`, `eventBodyBytes` set to the measured length and `limitBytes` set to `NETLIFY_MAX_EVENT_BYTES`. `fetch` is not called.
+      * `[✅]`   Queue POST: `fetch(deps.netlifyQueueUrl, …)` with the existing method, `Authorization`, `Content-Type` and body. A non-ok response → log `enqueueModelCall: Netlify queue returned non-2xx` with the status, return the queue-rejected flavor with `failure: 'queue_rejected'` and `queueStatus` set to `response.status`. The status is carried as a number and is not formatted into the error's message.
+      * `[✅]`   Queue unreachable: `fetch` throws → log `enqueueModelCall: fetch threw network error` with the thrown value, return the queue-unreachable flavor with `failure: 'queue_unreachable'`. The thrown value is carried on `error` when it is an `Error` and wrapped in one naming this site when it is not.
+      * `[✅]`   Success: an ok response → return `EnqueueModelCallSuccessReturn` with `queued: true`, `jobId` from `payload.job.id`, `sig` from the computed signature, `preflightInputTokens` from `payload.preflightInputTokens` as written to the row, `eventBodyBytes` from the measured serialized length and `queueStatus` from `response.status`.
+      * `[✅]`   Ordering and side effects: one signature computation, one row update, at most one serialization, at most one fetch. The row update precedes the fetch on every path that reaches both. No path throws out of the function, and every path ends in a member of `EnqueueModelCallReturn`.
+
+   * `[✅]`   `enqueueModelCall.mock.ts`
+      * `[✅]`   `buildEnqueueModelCallDeps`, `buildEnqueueModelCallParams`, `buildEnqueueModelCallPayload`, `buildEnqueueModelCallSuccessReturn`, `buildAiStreamEventData` and `buildAiStreamEventBody` replace the `createMock…` builders of the same types, and their invalidators compose the renamed builders.
+      * `[✅]`   `CreateMockEnqueueModelCallParamsOptions` and the second `options` argument on the params builder are deleted; `buildEnqueueModelCallParams` takes one optional overrides object, and a caller needing a specific `dbClient` passes it as an override.
+      * `[✅]`   `buildEnqueueModelCallParams` supplies `dbClient` only; its `job`, `providerRow`, `userAuthToken` and `userConfig` defaults move to `buildEnqueueModelCallPayload` beside `chatApiRequest` and `preflightInputTokens`, less `userAuthToken`.
+      * `[✅]`   `buildEnqueueModelCallSuccessReturn` supplies a default for every member the interface element declares on `EnqueueModelCallSuccessReturn`, and `EnqueueModelCallSuccessReturnOverrides` and `EnqueueModelCallSuccessReturnCorruptions` cover the widened type.
+      * `[✅]`   `createMockEnqueueModelCallErrorReturn`, `EnqueueModelCallErrorReturnOverrides`, `EnqueueModelCallErrorReturnCorruptions` and `invalidateEnqueueModelCallErrorReturn` are deleted; `EnqueueModelCallErrorReturn` is a union, which takes no builder of its own, and each of its object-type members takes the four symbols instead.
+      * `[✅]`   `EnqueueModelCallPreparationErrorReturnOverrides`, `buildEnqueueModelCallPreparationErrorReturn`, `EnqueueModelCallPreparationErrorReturnCorruptions` and `invalidateEnqueueModelCallPreparationErrorReturn` are added, the builder defaulting `failure` to `'provider_config_invalid'`.
+      * `[✅]`   The same four symbols are added for `EnqueueModelCallJobRowErrorReturn`, defaulting `failure` to `'job_row_update_failed'`.
+      * `[✅]`   The same four symbols are added for `EnqueueModelCallEventSizeErrorReturn`, defaulting `eventBodyBytes` above `limitBytes` so the default is a coherent instance of the failure it names.
+      * `[✅]`   The same four symbols are added for `EnqueueModelCallQueueRejectedErrorReturn`, defaulting `queueStatus` to a non-2xx number.
+      * `[✅]`   The same four symbols are added for `EnqueueModelCallQueueUnreachableErrorReturn`.
+      * `[✅]`   Overrides types are `Partial<T>`, corruption types are `{ [K in keyof T]?: unknown }`, invalidators return `unknown` and compose their builder, and every builder takes one optional overrides object and returns `overrides ? { ...base, ...overrides } : base`.
+      * `[✅]`   `mockEnqueueModelCall` and `mockBoundEnqueueModelCall` replace `mockEnqueueModelCallFn` and `mockBoundEnqueueModelCallFn`, keeping their signatures and returning `buildEnqueueModelCallSuccessReturn()`.
+
+   * `[✅]`   `enqueueModelCall.guard.test.ts`
+      * `[✅]`   The `isEnqueueModelCallSuccessReturn` checklist gains a corrupted case per member the interface element declares, fixtures from `invalidateEnqueueModelCallSuccessReturn`, plus an omitted-member case per required member rest-destructured from the builder.
+      * `[✅]`   A checklist per error-flavor guard: the flavor's builder accepted; valid overrides accepted; `null`, `undefined`, a primitive and an array rejected; each member corrupted in turn rejected through that flavor's invalidator; each required member omitted in turn rejected; and each of the other four flavors' builders rejected, which is what proves the guards discriminate rather than all accepting any error-shaped record.
+      * `[✅]`   The `isEnqueueModelCallErrorReturn` checklist accepts each of the five flavors' builders, rejects a record carrying `error` and `retriable` but no `failure`, and rejects a built success return.
+      * `[✅]`   The `isEnqueueModelCallParams` checklist covers the single surviving member, and a case asserts params carrying none of `job`, `providerRow`, `userConfig` or `userAuthToken` are accepted.
+      * `[✅]`   The `isEnqueueModelCallPayload` checklist gains a corrupted and an omitted case for each member moved onto it, the `job` case corrupting a member `isDialecticJobRow` checks and the `providerRow` case a member `isSelectedAiProvider` checks, so each proves delegation rather than a record test.
+      * `[✅]`   The `isEnqueueModelCallDeps`, `isAiStreamEventData` and `isAiStreamEventBody` cases keep their arrangements and assertions.
+
+   * `[✅]`   `enqueueModelCall.guard.ts`
+      * `[✅]`   `isEnqueueModelCallSuccessReturn` keeps its `queued === true` check and adds a typed check for each member the interface element declares.
+      * `[✅]`   `isEnqueueModelCallPreparationErrorReturn`, `isEnqueueModelCallJobRowErrorReturn`, `isEnqueueModelCallEventSizeErrorReturn`, `isEnqueueModelCallQueueRejectedErrorReturn` and `isEnqueueModelCallQueueUnreachableErrorReturn` are added, each discriminating on its own `failure` literal or alias membership, checking `error instanceof Error`, checking `retriable`, and checking the members its flavor adds.
+      * `[✅]`   `isEnqueueModelCallErrorReturn` returns true when any of the five flavor guards returns true and false otherwise, replacing its present `error`-and-`retriable` record check, which admits every flavor and every non-flavor alike.
+      * `[✅]`   `isEnqueueModelCallParams` drops `job`, `providerRow`, `userAuthToken` and `userConfig` from its key list and drops their four member checks, keeping `dbClient` and its existing check.
+      * `[✅]`   `isEnqueueModelCallPayload` gains a key list covering every member the interface element declares on the payload, delegating `job` to `isDialecticJobRow`, `providerRow` to `isSelectedAiProvider` and `userConfig` to `isUserConfig`, and keeping its `chatApiRequest` and `preflightInputTokens` checks.
+      * `[✅]`   Every guard keeps its boolean contract and takes `unknown`; `isEnqueueModelCallDeps`, `isAiStreamEventData` and `isAiStreamEventBody` are unchanged.
+
+   * `[✅]`   `enqueueModelCall.test.ts`
+      * `[✅]`   `enqueueModelCall returns queued true when fetch returns 2xx` asserts every member of the success return, with `sig` matching what the stubbed `computeJobSig` produced, `preflightInputTokens` matching the payload, `eventBodyBytes` matching the serialized body's length and `queueStatus` matching the stubbed response.
+      * `[✅]`   `enqueueModelCall returns retriable false when providerRow.config is invalid` asserts `failure` is `'provider_config_invalid'`.
+      * `[✅]`   `enqueueModelCall returns retriable false when api key is missing` asserts `failure` is `'api_key_missing'`.
+      * `[✅]`   `enqueueModelCall returns retriable false when job.user_id is null and does not call computeJobSig or fetch` asserts `failure` is `'job_user_id_missing'` and keeps both not-called assertions.
+      * `[✅]`   `enqueueModelCall returns retriable false when computeJobSig throws and does not call fetch` asserts `failure` is `'job_signature_failed'` and keeps the not-called assertion.
+      * `[✅]`   `enqueueModelCall returns retriable true when DB update fails and does not call fetch` asserts `failure` is `'job_row_update_failed'` and keeps the not-called assertion.
+      * `[✅]`   `enqueueModelCall returns retriable false when serialized event exceeds 500 KB and does not fetch` asserts `failure` is `'event_body_too_large'`, that `eventBodyBytes` is the serialized length and `limitBytes` is the 500 KB constant, and keeps the not-called assertion.
+      * `[✅]`   `enqueueModelCall returns retriable true when fetch returns non-2xx` asserts `failure` is `'queue_rejected'` and that `queueStatus` is the stubbed status, read from the member rather than from the error's message.
+      * `[✅]`   New case: `fetch` throwing a network error returns `failure` `'queue_unreachable'` with the thrown error carried on `error`, arranged with a `fetch` stub that rejects.
+      * `[✅]`   New case: a job row whose payload fails `isDialecticBaseJobPayload` returns `failure` `'job_payload_invalid'`, performs no row update and calls no `fetch`, arranged from `invalidateDialecticExecuteJobPayload`.
+      * `[✅]`   New case: a composed payload that fails `isJson` returns `failure` `'composed_payload_not_json'` and performs no row update.
+      * `[✅]`   New case: `computeJobSig` rejecting with a non-`Error` value returns `failure` `'job_signature_failed'` with an `Error` on the `error` member, proving no value escapes the return union.
+      * `[✅]`   Every case builds params through `buildEnqueueModelCallParams` with `dbClient` only and payload through `buildEnqueueModelCallPayload`, which now carries `job`, `providerRow` and `userConfig`.
+      * `[✅]`   The four titles naming the retired slot — `enqueueModelCall posts to netlify with chat_api_request and api_identifier from params and payload`, `enqueueModelCall updates dialectic_generation_jobs to queued for params.job.id`, `enqueueModelCall posts user_config.tier_output_cap_tokens from params onto enqueued event data` and `enqueueModelCall includes user_config.tier_output_cap_tokens null in JSON body when params supply null` — name the payload instead; each keeps its arrangement and assertions.
+
+   * `[✅]`   `enqueueModelCall.ts`
+      * `[✅]`   Each of the ten return sites returns the flavor the interaction spec assigns it, with its `failure` member set and its added members populated from the values already in scope at that site.
+      * `[✅]`   The `try`/`catch` wrapping the `isDialecticBaseJobPayload` proof, the `throw new Error('isDialecticBaseJobPayload returned false')` inside it and the `throw e` in its catch are deleted; the guard's false branch returns its flavor directly.
+      * `[✅]`   The `err instanceof Error ? err : new Error(String(err))` expressions at the `computeJobSig` and `fetch` sites are replaced by an explicit branch that carries a caught `Error` unchanged and otherwise constructs one naming that site.
+      * `[✅]`   The non-2xx branch sets `queueStatus` from `response.status` and stops formatting the status into the returned error's message; the size branch sets `eventBodyBytes` and `limitBytes` and stops formatting the byte count into its message.
+      * `[✅]`   The success branch returns the widened success return, reading `sig` from the computed signature, `eventBodyBytes` from the serialized body's length and `queueStatus` from the response.
+      * `[✅]`   Everything else is unchanged: the imports, the `NETLIFY_MAX_EVENT_BYTES` constant, every log call, the payload composition, the update statement, the event literals, the fetch call and the update-before-fetch ordering.
+
+   * `[✅]`   `enqueueModelCall.integration.test.ts`
+      * `[✅]`   `Integration: enqueueModelCall writes DB status then POSTs to Netlify and returns queued true` asserts the success return's members against the values the real serialization and the stubbed queue produced.
+      * `[✅]`   `Integration: enqueueModelCall returns retriable true when fetch fails and DB update was already committed` asserts the returned `failure` and keeps its committed-update assertion.
+      * `[✅]`   `Integration: enqueueModelCall forwards tier_output_cap_tokens onto enqueued AiStreamEventData` keeps its arrangement and assertions.
+      * `[✅]`   Its params literal carries `dbClient` only; `job`, `providerRow` and `userConfig` move to its payload literal and `userAuthToken` is dropped.
+      * `[✅]`   The chain stays real `enqueueModelCall` over a real `computeJobSig`, with only the Supabase client and the queue POST mocked; no repo-owned function in that chain is mocked or replaced by a builder.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward and are unchanged: this module imports its guards from `_shared` type-guard modules and `isUserConfig` from `calculateAffordability.provides.ts`, and exports nothing back to either.
+      * `[✅]`   `enqueueModelCall.provides.ts` re-exports the interface, guard, implementation and mock files, so the new return flavors, their guards and their builders reach consumers through the existing barrel with no edit to it.
+      * `[✅]`   No cycle: `prepareModelJob`, `processJob` and `createJobContext` import this module's bound function type; this module imports none of them.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `EnqueueModelCallSuccessReturn` declares every member the interface element names, and a dispatch populates each from the value it produced — interface test, exhaustive key record; unit test, the 2xx case.
+      * `[✅]`   `EnqueueModelCallErrorReturn` is the union of the five declared flavors and `EnqueueModelCallReturn` has exactly two arms — interface test, typed assignment.
+      * `[✅]`   Each of the ten failure sites returns its own `failure` value — unit test, one case per site.
+      * `[✅]`   A queue rejection carries the response status as a number on `queueStatus`, and an oversized event carries the measured size and the limit as numbers — unit test, read from the members and not from a message.
+      * `[✅]`   No path returns an error without a `failure` member, and no path throws out of the function — unit test, the non-`Error` rejection case; guard test, `isEnqueueModelCallErrorReturn` rejecting a record with no `failure`.
+      * `[✅]`   Each flavor guard accepts its own flavor and rejects the other four — guard test.
+      * `[✅]`   Every existing log message, `retriable` classification, update argument, event field and call ordering is what it is now — unit test and integration test, existing cases unchanged.
+
 * `[✅]`   supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts **[BE] Become the single model-call dispatcher: select the arm on the job row's `job_type` and narrow with that arm's guard, compose `calculateAffordability` with `compressPrompt`, branch the recursion guard on the same column, move `job` and `providerRow` to payload, eliminate `projectOwnerUserId` (KVP dup of `job.user_id`), drop `sessionData`/`authToken` and `compressionStrategy`, write `source_prompt_resource_id` onto the job payload before enqueue, and propagate the deferral as `PrepareModelJobPendingReturn`**
 
    * `[✅]`   `objective`
@@ -1376,7 +1538,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobReturn`, `ProcessComplexJobReturn` and `ProcessRenderJobReturn` are unions and take nothing of their own; each object-type member of each union is built by its own builder above.
       * `[✅]`   Each params builder defaults `dbClient` to `createMockSupabaseClient(undefined, {}).client` cast to `SupabaseClient<Database>` — the external-client cast this file already makes — and declares no other member.
       * `[✅]`   Each payload builder composes the row and payload builders this file already exports rather than a hand-rolled literal: `buildProcessSimpleJobPayload` returns `{ job: buildDialecticJobRow({ job_type: 'EXECUTE', payload: buildDialecticExecuteJobPayload() }) }`, `buildProcessComplexJobPayload` the same with `'PLAN'` and `buildDialecticPlanJobPayload()`, and `buildProcessRenderJobPayload` `{ job: buildDialecticJobRow() }`.
-      * `[✅]`   Each success-flavor builder returns its single discriminant — `{ dispatched: true }`, `{ deferred: true }`, `{ planned: true }`, `{ rendered: true }`. Each error-arm builder defaults `error` to `new Error("mock-process-simple-job-error")`, `new Error("mock-process-complex-job-error")` or `new Error("mock-process-render-job-error")` and `retriable` to `false`. The three error arms are structurally identical and each still takes its own per-type quartet; no generic or shared invalidator stands in for them.
+      * `[✅]`   Each success-flavor builder returns its single discriminant — `{ dispatched }`, `{ deferred: true }`, `{ planned: true }`, `{ rendered: true }`. Each error-arm builder defaults `error` to `new Error("mock-process-simple-job-error")`, `new Error("mock-process-complex-job-error")` or `new Error("mock-process-render-job-error")` and `retriable` to `false`. The three error arms are structurally identical and each still takes its own per-type quartet; no generic or shared invalidator stands in for them.
       * `[✅]`   Three function mocks, one per owned function type: `mockProcessSimpleJob: ProcessSimpleJobFn` returning `buildProcessSimpleJobDispatchedReturn()`, `mockProcessComplexJob: ProcessComplexJobFn` returning `buildProcessComplexJobSuccessReturn()` and `mockProcessRenderJob: ProcessRenderJobFn` returning `buildProcessRenderJobSuccessReturn()` — identical signatures, no extra parameters, no options bag, no recording.
       * `[✅]`   `_JobProcessorsDummyImpl` assigns those three function mocks to its `processSimpleJob`, `processComplexJob` and `processRenderJob` members, so the class satisfies `IJobProcessors` under the reshaped contracts; the `(..._args: any[]): Promise<void>` declarations and the `deno-lint-ignore no-explicit-any` comments above them are deleted with the `any` they suppressed.
       * `[✅]`   `createMockJobProcessors`, `MockJobProcessorsSpies` and the spy wiring around them are otherwise untouched; eight suites outside this module consume them.
@@ -1480,247 +1642,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   Each payload guard rejects a row carrying another arm's payload, and no arm's member checks are inlined at a delegation site — guard test, cross-arm rejection cases.
       * `[✅]`   The full graph assembles and runs end to end with only Supabase and the queue mocked — integration test.
 
-
-*   `[ ]` supabase/functions/dialectic-worker/processSimpleJob/processSimpleJob.ts **[BE] Canonize the EXECUTE processor as a module owning its whole contract: guard the untrusted payload on entry, return every failure as a typed error on the error arm, propagate the dispatcher's error unchanged, read the step markers from `planner_metadata`, and surrender every retry decision and row write to the runner**
-
-    *   `[ ]` `objective`
-        *   `[ ]` Solve a processor whose payload slot is `unknown` and whose body reads it as though it were narrowed, so the file does not compile. It destructures `job` off the parameter before any guard runs, re-guards the job row's payload after that, and carries the narrowing on an inner guard whose negated branch cannot execute.
-        *   `[ ]` Solve a processor that reports by throwing and then reconstructs what it threw. It wraps the dispatcher's typed error in a second error type, throws it, catches it, unwraps it, and matches the message text against fourteen substrings to recover a classification the callee already carried.
-        *   `[ ]` Solve a processor that decides its own job is dead: it writes `status: 'failed'`, compares `attempt_count` against `max_retries`, calls `ctx.retryJob`, and writes `status: 'retry_loop_failed'`, so the runner that claimed the row learns nothing.
-        *   `[ ]` Solve a recipe-step resolution that reads its slug marker from the payload root, where the payload's own guard forbids it, while reading its two sibling markers from `planner_metadata`, where the type admits them.
-        *   `[ ]` Solve a body that carries eleven values in variables annotated with unions composed at the annotation site, and supplies defaults with a ternary and with `??`.
-        *   `[ ]` Solve a processor that owns no contract: its eight types sit in a service-layer interface, its six guards in a shared guard file, its twenty-one mock symbols in a shared mock file, and its contract proofs in another module's interface test — so no consumer can build or test against it from one import point, and every one of those files is edited whenever this processor changes.
-        *   `[ ]` Functional goals:
-            *   `[ ]` The module lives at `dialectic-worker/processSimpleJob/` and owns its interface, interface test, mock, guard, guard test, provides, unit suite, integration suite and implementation. Consumers reach every symbol through `processSimpleJob.provides.ts`.
-            *   `[ ]` `ProcessSimpleJobFn` declares `payload: unknown`. The payload type is the guard's narrowing target, not the parameter annotation.
-            *   `[ ]` `processSimpleJob` is declared `export const processSimpleJob: ProcessSimpleJobFn = async (ctx, params, payload) => { … }`, parameter types inferred from that annotation, returning `Promise<ProcessSimpleJobReturn>`.
-            *   `[ ]` `isProcessSimpleJobPayload(payload)` is the first statement of the outermost `try`. Its `false` return produces the error arm directly; its delegated throw reaches the outermost `catch`, which produces the error arm. Neither path notifies and neither writes a row.
-            *   `[ ]` The narrowed `payload.job` is bound inside that outer `try`, and the body runs in a second `try` nested in the narrowed scope, so the body's `catch` reads the job row while the guard's throw is handled above it.
-            *   `[ ]` `params.dbClient` replaces the `dbClient` parameter, `payload.job` replaces the `job` parameter, `payload.job.user_id` replaces every read of `projectOwnerUserId`.
-            *   `[ ]` The recipe-step slug marker is read from `payload.job.payload.planner_metadata`, beside `recipe_step_id` and `recipe_template_id`, and the read of `step_slug` from the payload root is deleted.
-            *   `[ ]` The `ctx.gatherArtifacts` params literal carries `stageSlug` from the narrowed payload and `output_type` from the resolved recipe step, beside the four members it passes today.
-            *   `[ ]` The `PrepareModelJobParams` literal carries `dbClient` and nothing else. The `PrepareModelJobPayload` literal carries `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance` and `inputsRequired`, and the `getSortedCompressionCandidates` import is deleted with the `compressionStrategy` member it supplied.
-            *   `[ ]` The dispatcher's error arm is returned as `{ error: prepareResult.error, retriable: prepareResult.retriable }`. `PrepareModelJobExecutionError`, its construction, its unwrapping and its import are deleted.
-            *   `[ ]` A `ContextWindowError` on the dispatcher's error arm sends the three failure notifications it sends today and returns `{ error, retriable: false }`.
-            *   `[ ]` A deferral is narrowed with `isPrepareModelJobPendingReturn` and returns `{ deferred: true }` with no notification and no row write. A dispatch is narrowed with `isPrepareModelJobQueuedReturn`, sends `execute_completed`, and returns `{ dispatched: true }`.
-            *   `[ ]` Each failure this function owns returns a `ProcessSimpleJobError` carrying that failure's `ProcessSimpleJobErrorCode` and its message, after sending that failure's notifications, with `retriable: false`. No owned failure throws.
-            *   `[ ]` The nested `catch` returns `{ error, retriable: true }` for an unexpected throw and sends no notification.
-            *   `[ ]` No path writes `status: 'failed'`, `status: 'retry_loop_failed'`, a `completed_at`, or an `error_details` failure message; no path calls `ctx.retryJob` or compares `attempt_count` against `max_retries`.
-        *   `[ ]` Non-functional constraints:
-            *   `[ ]` Every failure notification keeps its recipient, its condition and its payload: `sendContributionGenerationFailedEvent`, `sendContributionFailedNotification` and the `job_failed` `sendJobNotificationEvent`, each fired where it fires today, its code now read from the returned error rather than matched from a message.
-            *   `[ ]` The three notifications that accompanied the `retry_loop_failed` write leave this module with that write and are not replaced. The terminal statement is `handleJob`'s, in the worker root's node.
-            *   `[ ]` The opening `Starting attempt N/M` log line moves inside the narrowed scope, keeps reading `attempt_count` and `max_retries` off the row, and decides nothing.
-            *   `[ ]` `sessionData` keeps every use it has — the assembler options, the iteration number it supplies to `gatherArtifacts` and to every notification. What ends is passing it onward.
-            *   `[ ]` The stage and recipe resolution, the provider read, the overlay-row read, the initial-prompt resolution, the continuation routing, the `promptConstructionPayload` construction, the `execute_started` and `dialectic_contribution_started` events, and every log line keep their behavior.
-            *   `[ ]` `FailedAttemptError` and `ModelProcessingResult` constructions and imports leave with the retry branch.
-            *   `[ ]` Every moved symbol keeps its production name. This node relocates and corrects; it renames nothing.
-        *   `[ ]` Each goal is proven by a named case in this module's interface, guard, unit or integration suite.
-
-    *   `[ ]` `role`
-        *   `[ ]` App-layer orchestration of one EXECUTE job: prove the payload, resolve the stage and its recipe step, assemble the prompt, gather the artifacts, hand the result to the dispatcher, and report what happened as a return value.
-        *   `[ ]` Dispatch and deferral are this function's own outcomes; it is the only party that knows whether a model call was enqueued or the job is waiting on compression children. Whether a failed job is retried is a queue policy applied to a row, and the runner holds the row.
-        *   `[ ]` Out-of-scope responsibilities:
-            *   `[ ]` Do not write `status: 'failed'`, `'retrying'` or `'retry_loop_failed'`, a `completed_at`, or an `error_details` failure message.
-            *   `[ ]` Do not read `max_retries` or `attempt_count` for a decision, and do not call `ctx.retryJob`.
-            *   `[ ]` Do not decide affordability, compress anything, or read a compression artifact.
-            *   `[ ]` Do not set `waiting_for_children` on the deferral path.
-            *   `[ ]` Do not declare `IJobProcessors`; it belongs to the `processJob` module and imports this module's `ProcessSimpleJobFn` from its provides.
-            *   `[ ]` Do not declare `IJobContext`; it belongs to `createJobContext` and is imported from there as this function's deps slot.
-            *   `[ ]` Do not write the step markers this function reads. The skeleton builder in `processComplexJob.ts` mints them and the planner carries them forward, in that module's node.
-            *   `[ ]` Do not edit `gatherArtifacts`, `applyCompressionOverlay`, `prepareModelJob`, `processJob` or `dialectic-worker/index.ts`.
-            *   `[ ]` Do not decompose the implementation body or extract from it.
-
-    *   `[ ]` `module`
-        *   `[ ]` Bounded context is `dialectic-worker/processSimpleJob/` — one EXECUTE job's pass from payload proof through assembly and gathering to dispatch, the outcome it reports, the contract that outcome satisfies, and the types its failures carry.
-        *   `[ ]` Inside boundary: this processor's function type, its params, its payload, its return arms and flavors, its owned error taxonomy, its step markers, and every guard and mock for them.
-        *   `[ ]` Outside boundary: whether a retriable failure is retried and what a job's terminal state is, both the runner's; caps, wallet, affordability, compression and the queue, all `prepareModelJob`'s; `IJobContext`, `createJobContext`'s; `IJobProcessors`, `processJob`'s.
-
-    *   `[ ]` `deps`
-        *   `[ ]` Removed provider: `_shared/utils/vector_utils.ts` (`getSortedCompressionCandidates`). Shared utility, inbound, closed by this node — this file imported the concrete scorer solely to relay it.
-        *   `[ ]` Removed provider: `createJobContext/JobContext.interface.ts` (`RetryJobFn`), and every read of `ctx.retryJob`. App-layer context contract, inbound, closed by this node.
-        *   `[ ]` Provider: `../createJobContext/JobContext.interface.ts` (`IJobContext`). Worker-layer context contract, inbound, this function's deps slot. `createJobContext` imports nothing from this module, so the edge is one-way and no cycle is opened.
-        *   `[ ]` Provider: `../prepareModelJob/prepareModelJob.provides.ts` — `isPrepareModelJobErrorReturn`, `isPrepareModelJobPendingReturn`, `isPrepareModelJobQueuedReturn`, `PrepareModelJobParams`, `PrepareModelJobPayload`. Sibling app-layer module, inbound. `PrepareModelJobExecutionError` is not among them.
-        *   `[ ]` Provider: `dialectic-service/dialectic.interface.ts` — `DialecticJobRow`, `DialecticExecuteJobPayload`, `DialecticRecipeStep`, `DialecticSessionRow`, `PromptConstructionPayload`. Service-layer types this module's contract composes; that file imports nothing from this module after this node.
-        *   `[ ]` Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` — `isDialecticJobRow`, `isDialecticExecuteJobPayload`, `isRecord`, which this module's own payload guard calls. Shared guard package, inbound.
-        *   `[ ]` Confirm:
-            *   `[ ]` The deps slot is `IJobContext`, unnarrowed, as this function receives it today.
-            *   `[ ]` `ctx.gatherArtifacts` carries the two added params as of its own node; `ctx.prepareModelJob` carries the narrowed params, the widened payload and the two-flavor success arm as of its own node. This node supplies and narrows; it changes neither contract.
-            *   `[ ]` No reverse dependency: `prepareModelJob`, `gatherArtifacts`, `retryJob`, `vector_utils`, `createJobContext` and `dialectic-service/dialectic.interface.ts` import nothing from this module.
-        *   `[ ]` `context_slice`
-            *   `[ ]` From `ctx`: `logger`, `notificationService`, `promptAssembler`, `downloadFromStorage`, `gatherArtifacts`, `prepareModelJob`.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.interface.test.ts`
-        *   `[ ]` Prove `ProcessSimpleJobParams` and `ProcessSimpleJobPayload` by their required-key surface records, each annotated with the exported symbol.
-        *   `[ ]` Prove `ProcessSimpleJobDispatchedReturn` and `ProcessSimpleJobDeferredReturn` as flavors of `ProcessSimpleJobSuccessReturn`, and `ProcessSimpleJobSuccessReturn` and `ProcessSimpleJobErrorReturn` as arms of `ProcessSimpleJobReturn`, by typed assignment.
-        *   `[ ]` Prove `ProcessSimpleJobFn`'s declared return in the async form: `ReturnType<ProcessSimpleJobFn>` admits `Promise<ProcessSimpleJobReturn>`.
-        *   `[ ]` Prove `ProcessSimpleJobErrorCode` by a typed literal assigned to the alias, one block covering its admitted values.
-        *   `[ ]` Prove `ProcessSimpleJobErrorConstructorParams` and `ProcessSimpleJobStepMarkers` by their required-key surface records.
-        *   `[ ]` Prove `ProcessSimpleJobStepMarkersOrAbsent` and `DialecticRecipeStepOrAbsent` by membership: the base type is assignable to each, and `null` is assignable to each.
-        *   `[ ]` No block proves a payload contract through `Parameters<ProcessSimpleJobFn>[2]`; that slot is `unknown` and admits everything.
-        *   `[ ]` Report the enumeration: every symbol `processSimpleJob.interface.ts` exports, and the block proving each, in both directions.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.interface.ts`
-        *   `[ ]` Declare `ProcessSimpleJobParams` with `dbClient`, `ProcessSimpleJobPayload` with `job`, and the five return types — `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobErrorReturn`, `ProcessSimpleJobReturn` — in the shapes they carry today.
-        *   `[ ]` Declare `ProcessSimpleJobFn` as `(deps: IJobContext, params: ProcessSimpleJobParams, payload: unknown) => Promise<ProcessSimpleJobReturn>`.
-        *   `[ ]` Declare `ProcessSimpleJobErrorCode` as a string-literal union whose members are the codes this function's owned failures carry: `AUTH_MISSING`, `INVALID_INITIAL_PROMPT`, `STAGE_CONFIG_MISSING_OVERLAYS`, `STAGE_CONFIG_MISSING`, `SESSION_NOT_FOUND`, `PROJECT_NOT_FOUND`, `DOMAIN_NOT_FOUND`, `RECIPE_STEP_RESOLUTION_FAILED`, `CONTINUATION_CONTENT_MISSING`, `INTERNAL_DEPENDENCY_MISSING`, `PROVIDER_CONFIG_INVALID`, `DISPATCHER_RESULT_INVALID`.
-        *   `[ ]` Declare `ProcessSimpleJobErrorConstructorParams` with `code: ProcessSimpleJobErrorCode` and `message: string`, and `ProcessSimpleJobError` extending `Error`, taking one such object and exposing `code`.
-        *   `[ ]` Declare `ProcessSimpleJobStepMarkers` with `documentKey: FileType` and `stepKey: string`, `ProcessSimpleJobStepMarkersOrAbsent` as that type or `null`, and `DialecticRecipeStepOrAbsent` as `DialecticRecipeStep` or `null`.
-        *   `[ ]` The codes for failures owned by the dispatcher's chain — insufficient funds, wallet missing, wallet balance invalid, save failed, continuation root missing — are not members of `ProcessSimpleJobErrorCode`. Those failures arrive on `prepareModelJob`'s error arm and are propagated.
-
-    *   `[ ]` `processSimpleJob.interaction.spec`
-        *   `[ ]` Branch: the payload is not a `ProcessSimpleJobPayload`.
-            *   `[ ]` Condition: the entry guard returns `false`.
-            *   `[ ]` Decision: `isProcessSimpleJobPayload(payload)`.
-            *   `[ ]` Dependency call: none.
-            *   `[ ]` Outcome: `{ error, retriable: false }` carrying an error naming the rejected shape. No notification, no row write.
-        *   `[ ]` Branch: the job row's payload fails a member check.
-            *   `[ ]` Condition: the entry guard's delegation to `isDialecticExecuteJobPayload` throws its per-member diagnostic.
-            *   `[ ]` Decision: the outermost `catch`.
-            *   `[ ]` Dependency call: none.
-            *   `[ ]` Outcome: `{ error: <the guard's diagnostic>, retriable: false }`. No notification, no row write.
-        *   `[ ]` Branch: a resolution step fails — session, provider, project, domain, stage, system prompt, overlays, recipe step, initial prompt, or continuation content.
-            *   `[ ]` Condition: that step's existing check fails.
-            *   `[ ]` Decision: the existing comparison for that check.
-            *   `[ ]` Dependency call: the reads already made on that path, then that failure's three notifications with its code.
-            *   `[ ]` Outcome: `{ error: new ProcessSimpleJobError({ code, message }), retriable: false }`, returned at the site. No row write.
-        *   `[ ]` Branch: gathering fails.
-            *   `[ ]` Condition: `ctx.gatherArtifacts` returns its error arm.
-            *   `[ ]` Decision: `isGatherArtifactsErrorReturn(gatherResult)`.
-            *   `[ ]` Dependency call: `ctx.gatherArtifacts({ dbClient, projectId, sessionId, iterationNumber, stageSlug, output_type }, { inputsRequired })`.
-            *   `[ ]` Outcome: `{ error: gatherResult.error, retriable: gatherResult.retriable }`, propagated unchanged.
-        *   `[ ]` Branch: the dispatcher returns its error arm and the error is a `ContextWindowError`.
-            *   `[ ]` Condition: `isPrepareModelJobErrorReturn(prepareResult)` and `prepareResult.error instanceof ContextWindowError`.
-            *   `[ ]` Decision: those two checks, in that order.
-            *   `[ ]` Dependency call: `ctx.logger.error`, then the `other_generation_failed` event, the `contribution_generation_failed` notification and, when the step markers are not `null`, the `job_failed` event, each with its existing `CONTEXT_WINDOW_ERROR` code and message.
-            *   `[ ]` Outcome: `{ error: prepareResult.error, retriable: false }`. No row write.
-        *   `[ ]` Branch: the dispatcher returns its error arm and the error is anything else.
-            *   `[ ]` Condition: `isPrepareModelJobErrorReturn(prepareResult)`.
-            *   `[ ]` Decision: that guard, with the `ContextWindowError` check false.
-            *   `[ ]` Dependency call: that failure's three notifications, its code read from the propagated error where it carries one and `INTERNAL_DEPENDENCY_MISSING` where it does not.
-            *   `[ ]` Outcome: `{ error: prepareResult.error, retriable: prepareResult.retriable }`, propagated unchanged and never re-wrapped.
-        *   `[ ]` Branch: the dispatcher deferred.
-            *   `[ ]` Condition: `isPrepareModelJobPendingReturn(prepareResult)`.
-            *   `[ ]` Decision: that guard.
-            *   `[ ]` Dependency call: none.
-            *   `[ ]` Outcome: `{ deferred: true }`.
-        *   `[ ]` Branch: the dispatcher queued the call.
-            *   `[ ]` Condition: `isPrepareModelJobQueuedReturn(prepareResult)`.
-            *   `[ ]` Decision: that guard.
-            *   `[ ]` Dependency call: `ctx.notificationService.sendJobNotificationEvent` with `type: 'execute_completed'` and the members it sends today, when `payload.job.user_id` is present.
-            *   `[ ]` Outcome: `{ dispatched: true }`.
-        *   `[ ]` Branch: the dispatcher returned neither arm.
-            *   `[ ]` Condition: no return guard matches.
-            *   `[ ]` Decision: all three arm guards false.
-            *   `[ ]` Dependency call: none.
-            *   `[ ]` Outcome: `{ error: new ProcessSimpleJobError({ code: 'DISPATCHER_RESULT_INVALID' … }), retriable: false }`.
-        *   `[ ]` Branch: an unexpected throw reaches the nested `catch`.
-            *   `[ ]` Condition: a collaborator throws where no owned check covers it.
-            *   `[ ]` Decision: none.
-            *   `[ ]` Dependency call: `ctx.logger.warn` with the attempt and the model.
-            *   `[ ]` Outcome: `{ error, retriable: true }`. No notification.
-        *   `[ ]` Ordering and side effects: exactly one gather call and one dispatcher call per invocation; no `dialectic_generation_jobs` write on any path; at most one set of failure notifications, and none on the unexpected-throw path, the deferral, or either guard-failure path; every outcome leaves the function by returning a member of the union.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.mock.ts`
-        *   `[ ]` The four symbols for each owned object type: `ProcessSimpleJobParams`, `ProcessSimpleJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobErrorReturn`, `ProcessSimpleJobErrorConstructorParams` and `ProcessSimpleJobStepMarkers`.
-        *   `[ ]` `mockProcessSimpleJob: ProcessSimpleJobFn`, returning `buildProcessSimpleJobDispatchedReturn()`, identical signature, no options bag, no recording.
-        *   `[ ]` `buildProcessSimpleJobError`, returning a real `new ProcessSimpleJobError(buildProcessSimpleJobErrorConstructorParams(overrides))`. There is no `invalidateProcessSimpleJobError` and no `mockProcessSimpleJobError`.
-        *   `[ ]` `ProcessSimpleJobSuccessReturn` and `ProcessSimpleJobReturn` take no builder of their own; each member has one. `ProcessSimpleJobErrorCode`, `ProcessSimpleJobStepMarkersOrAbsent` and `DialecticRecipeStepOrAbsent` take no mock.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.guard.test.ts`
-        *   `[ ]` Prove `isProcessSimpleJobParams`, `isProcessSimpleJobPayload`, `isProcessSimpleJobDispatchedReturn`, `isProcessSimpleJobDeferredReturn`, `isProcessSimpleJobSuccessReturn`, `isProcessSimpleJobErrorReturn`, `isProcessSimpleJobErrorCode`, `isProcessSimpleJobError` and `isProcessSimpleJobStepMarkers` against the case checklist, fixtures drawn from this module's builders and invalidators.
-        *   `[ ]` A case proves `isProcessSimpleJobPayload` rejects a row carrying a plan payload, surfacing the arm guard's own reason.
-        *   `[ ]` Each return-flavor guard accepts its own flavor and rejects every other.
-        *   `[ ]` `isProcessSimpleJobError` accepts a real instance and rejects an object literal carrying the same members.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.guard.ts`
-        *   `[ ]` Implement the six guards this module now owns in the bodies they carry today, calling `isDialecticJobRow` and `isDialecticExecuteJobPayload` from the shared guard package for the imported types they delegate to.
-        *   `[ ]` Implement `isProcessSimpleJobErrorCode` over the alias's admitted values, `isProcessSimpleJobError` by `instanceof`, and `isProcessSimpleJobStepMarkers` as a data guard checking both members.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.test.ts`
-        *   `[ ]` The suite moves from `dialectic-worker/processSimpleJob.test.ts`, its implementation import becoming the sibling path and its fixtures becoming this module's builders. No case is deleted except where named below.
-        *   `[ ]` Every case calls `processSimpleJob(ctx, { dbClient }, { job })` and restates its `Act` line to that call.
-        *   `[ ]` New case: a payload that is not a `ProcessSimpleJobPayload` returns the error arm with `retriable: false`, sends no notification and writes `dialectic_generation_jobs` zero times.
-        *   `[ ]` New case: a job row whose payload fails a member check returns the error arm carrying the guard's own diagnostic, with `retriable: false`.
-        *   `[ ]` Each case that asserts a thrown error asserts the returned error arm instead, its `error` an instance of `ProcessSimpleJobError` carrying that failure's code, its `retriable` `false`, and no `dialectic_generation_jobs` update issued.
-        *   `[ ]` New case: the dispatcher's error arm is returned with the identical error instance and the dispatcher's own `retriable` value, arranged with `retriable: true` so the flag cannot be a constant, and asserting the returned error is not an instance of `ProcessSimpleJobError`.
-        *   `[ ]` New case: a `ContextWindowError` on the dispatcher's error arm returns that same instance with `retriable: false` and sends the three `CONTEXT_WINDOW_ERROR` notifications.
-        *   `[ ]` New case: an unexpected throw from `ctx.promptAssembler.assemble` returns the error arm with `retriable: true` and sends no notification, arranged beside a classified case in the same file.
-        *   `[ ]` New case: the recipe step resolves from `planner_metadata` carrying only a slug marker and no `recipe_step_id`.
-        *   `[ ]` New case: a dispatcher returning `{ waiting_for_children: true }` returns `{ deferred: true }`, sends zero notifications and writes zero rows, arranged alongside a queued case in the same file.
-        *   `[ ]` New case: a dispatcher returning `{ queued: true }` returns `{ dispatched: true }` and sends exactly one `execute_completed` event carrying the members it carries today.
-        *   `[ ]` Every case's `PrepareModelJobParams` expectation asserts one member, `dbClient`; every `PrepareModelJobPayload` expectation asserts the five members and that no `compressionStrategy`, `authToken` or `sessionData` is present.
-        *   `[ ]` New case: the `gatherArtifacts` call receives `stageSlug` from the payload and `output_type` from the resolved recipe step, captured at the call site.
-        *   `[ ]` The three cases asserting `ctx.retryJob` is called, and the case asserting the `retry_loop_failed` row update and its three notifications, are deleted with the branch they covered.
-        *   `[ ]` New case: a failure the function reports as retriable calls `ctx.retryJob` zero times and writes zero rows.
-        *   `[ ]` Every remaining case keeps its coverage and its assertions.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.ts`
-        *   `[ ]` The implementation moves from `dialectic-worker/processSimpleJob.ts`, declared as annotated above, with the restated parameter types and the imports they required deleted.
-        *   `[ ]` Open one `try` whose first statement is the entry guard, bind `params.dbClient` and `payload.job` after it, and open a second `try` for the body inside that narrowed scope. The outer `catch` handles only the guard's throw.
-        *   `[ ]` Delete the inner `isDialecticExecuteJobPayload` call and its unreachable negated block.
-        *   `[ ]` Hold the step markers in one value typed `ProcessSimpleJobStepMarkersOrAbsent`, assigned once when the recipe step resolves, and read as a pair by every failure notification. The `?? 'unknown'` default is deleted with the pair that made it unreachable.
-        *   `[ ]` Hold the resolved recipe step in one value typed `DialecticRecipeStepOrAbsent`.
-        *   `[ ]` Read the slug marker from `planner_metadata` beside `recipe_step_id` and `recipe_template_id`; delete the root read and the `isRecord` checks that reached it.
-        *   `[ ]` Bind `providerDetails`, `resolvedProjectInitialUserPrompt` and `sourceContributionId` as `const` at the point each is determined, each branch returning its typed error where the value cannot be determined, so no value is carried in a variable annotated with a union composed at that site.
-        *   `[ ]` Replace `e instanceof Error ? e : new Error(String(e))` with an explicit branch in the nested `catch`.
-        *   `[ ]` Delete the fourteen `lower.includes` comparisons, the `lower.startsWith` comparison, the `prepareJobRetriable` carrier and the `message`/`lower` locals. `emitImmediateFailure` keeps its three notifications, takes a `ProcessSimpleJobErrorCode` and a message, and writes no row.
-        *   `[ ]` Delete the `dialectic_generation_jobs` update in the `ContextWindowError` branch and the one inside `emitImmediateFailure`.
-        *   `[ ]` Delete the `failedAttempt` and `modelProcessingResult` constructions, the `currentAttempt < max_retries` comparison, the `ctx.retryJob` call, the `retry_loop_failed` update with its log line, the three notifications that followed it, and the `FailedAttemptError` and `ModelProcessingResult` imports.
-        *   `[ ]` Take every import from `prepareModelJob.provides.ts`, gaining the two arm guards and losing `isPrepareModelJobSuccessReturn` and `PrepareModelJobExecutionError`.
-        *   `[ ]` The `gatherArtifacts` params literal gains `stageSlug` and `output_type`; the `PrepareModelJobParams` literal drops `authToken`, `job`, `projectOwnerUserId` and `providerRow`; the `PrepareModelJobPayload` literal drops `compressionStrategy` and gains `job` and `providerRow`; the `getSortedCompressionCandidates` import is deleted.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.provides.ts`
-        *   `[ ]` Re-export `processSimpleJob.ts`, `processSimpleJob.interface.ts`, `processSimpleJob.guard.ts` and `processSimpleJob.mock.ts`.
-
-    *   `[ ]` supabase/functions/dialectic-service/`dialectic.interface.ts`
-        *   `[ ]` Delete `ProcessSimpleJobParams`, `ProcessSimpleJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobErrorReturn`, `ProcessSimpleJobReturn` and `ProcessSimpleJobFn`, and the imports they required.
-        *   `[ ]` `IJobProcessors` keeps its `processSimpleJob` member and takes `ProcessSimpleJobFn` from this module's provides until the `processJob` node relocates the interface itself. That import is the one edge this file holds into `dialectic-worker`, and it closes in that node.
-
-    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.ts`
-        *   `[ ]` Delete `isProcessSimpleJobParams`, `isProcessSimpleJobPayload`, `isProcessSimpleJobDispatchedReturn`, `isProcessSimpleJobDeferredReturn`, `isProcessSimpleJobSuccessReturn` and `isProcessSimpleJobErrorReturn`, and the type imports they required.
-
-    *   `[ ]` supabase/functions/_shared/utils/type-guards/`type_guards.dialectic.test.ts`
-        *   `[ ]` Delete the checklist blocks for those six guards and the imports they required. Every case they carry is present in this module's guard suite; none is lost.
-
-    *   `[ ]` supabase/functions/_shared/`dialectic.mock.ts`
-        *   `[ ]` Delete the four symbols each for `ProcessSimpleJobParams`, `ProcessSimpleJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn` and `ProcessSimpleJobErrorReturn`, and `mockProcessSimpleJob`, and the type imports they required.
-        *   `[ ]` `_JobProcessorsDummyImpl` takes `mockProcessSimpleJob` from this module's provides for its `processSimpleJob` member.
-
-    *   `[ ]` supabase/functions/dialectic-worker/createJobContext/`createJobContext.interface.test.ts`
-        *   `[ ]` Delete the `ProcessSimpleJob*` proof blocks and their imports. Every symbol they proved is proven in this module's interface suite; none is lost.
-        *   `[ ]` The `IJobProcessors` surface case keeps its `processSimpleJob` key assertion.
-
-    *   `[ ]` processSimpleJob/`processSimpleJob.integration.test.ts`
-        *   `[ ]` The suite moves from `dialectic-worker/processSimpleJob.integration.test.ts`, its implementation import becoming the sibling path and its fixtures becoming this module's builders.
-        *   `[ ]` Every call becomes `processSimpleJob(ctx, { dbClient }, { job })`, and every `PrepareModelJobParams` and `PrepareModelJobPayload` construction and assertion takes the shapes above.
-        *   `[ ]` Rebuild the `boundCompressPrompt` and `boundCalculateAffordability` closures at both construction sites to the deps their own nodes established. Delete the `MockRagService` and `embeddingClient` constructions and the `rag_service.mock.ts` import.
-        *   `[ ]` The `PrepareModelJobDeps` literal gains `compressPrompt: boundCompressPrompt`; the `gatherArtifacts` closure's deps literal gains the bound `applyCompressionOverlay`, with `stageSlug` and `output_type` supplied on the params it forwards.
-        *   `[ ]` The integrated chain is real end to end: `processSimpleJob` → `gatherArtifacts` → `applyCompressionOverlay` → `prepareModelJob` → `calculateAffordability` → `compressPrompt` → `enqueueCompressJobs`, and on the within-budget path `prepareModelJob` → `enqueueModelCall`.
-        *   `[ ]` Mocked at the outer edge only: the Supabase client and the queue POST.
-        *   `[ ]` A case drives an oversized working set through that chain: COMPRESS rows are inserted with `parent_job_id` equal to this job, and the call returns `{ deferred: true }` having sent no notification and written no row status.
-        *   `[ ]` A case drives a within-budget working set: the queue receives one POST, the call returns `{ dispatched: true }`, and exactly one `execute_completed` event is sent.
-        *   `[ ]` A case drives an already-compressed working set: the overlay swaps the victim's content, the recount fits, and the call reaches the queue with no COMPRESS row inserted.
-        *   `[ ]` A case drives a dispatcher failure through the chain and asserts the returned error is the dispatcher's own instance, with no `dialectic_generation_jobs` write.
-
-    *   `[ ]` `directionality`
-        *   `[ ]` Deps face inward: this module imports `IJobContext` from `createJobContext`, the dispatcher's contract from `prepareModelJob`'s provides, and service-layer types from `dialectic.interface.ts`. It exports its own surface outward through `processSimpleJob.provides.ts`.
-        *   `[ ]` The edges into `vector_utils` and the retry module are removed and not replaced.
-        *   `[ ]` No cycle: `createJobContext`, `prepareModelJob`, `gatherArtifacts`, `retryJob` and `vector_utils` import nothing from this module. `dialectic.interface.ts` holds one inbound import for `IJobProcessors`, which closes when the `processJob` node relocates that interface.
-        *   `[ ]` `dialectic-worker/index.ts`, `index.test.ts`, `processJob.ts` and `processJob.test.ts` go transiently non-compilable at this node and are not edited here; each is a support file of the `processJob` or worker-root node later in this workstream.
-        *   `[ ]` The legacy `dialectic-worker/processSimpleJob.ts` retires when its last consumer switches, in the worker root's node.
-
-    *   `[ ]` `requirements`
-        *   `[ ]` `ProcessSimpleJobFn` declares `payload: unknown`, and the implementation is annotated with it and declares no parameter types of its own — proven by the compiler.
-        *   `[ ]` Every symbol `processSimpleJob.interface.ts` exports is both imported and consumed by a proof block — interface test, bidirectional enumeration.
-        *   `[ ]` Every type this module owns, less the two top-level unions, has a guard with no false positives and no false negatives — guard test, the case checklist per guard.
-        *   `[ ]` Every owned object type has a `Partial<T>` builder and an `unknown`-returning invalidator, and the function mock is the production function type — proven by the compiler.
-        *   `[ ]` No value in the implementation is annotated with a union composed at its annotation site — proven by the compiler against the named aliases this module declares.
-        *   `[ ]` No path throws; every path returns a member of `ProcessSimpleJobReturn` — unit test, one case per branch of the interaction spec.
-        *   `[ ]` The dispatcher's error is returned as the identical instance with the dispatcher's own `retriable` — unit test, instance identity assertion.
-        *   `[ ]` No path issues a `dialectic_generation_jobs` write — unit test and integration test.
-        *   `[ ]` The dispatcher receives params carrying only `dbClient`, and a payload carrying the five members and no `compressionStrategy` — unit and integration test, captured-argument assertions.
-        *   `[ ]` The recipe step resolves from a `planner_metadata` slug marker with no `recipe_step_id` present — unit test.
-        *   `[ ]` No symbol named in this node exists in two places when it closes — proven by the compiler against the deletions above.
+*   `[ ]` supabase/functions/dialectic-worker/processSimpleJob/processSimpleJob.ts **[BE] Guard the untrusted payload on entry, return every failure as a typed error on the error arm, propagate the dispatcher's error unchanged, read the step markers from `planner_metadata`, and retire the duplicate contract left in the shared files**
 
 * `[ ]`   supabase/functions/dialectic-worker/resolveNextBlocker/resolveNextBlocker.ts **[BE] Canonize the blocker resolver as a module owning its whole contract: take the canonical `(deps, params, payload)` shape, prove the artifact identity on entry, report on a two-arm return, and own the identity type its caller builds**
 
